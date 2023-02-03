@@ -11,7 +11,7 @@ class Program
 {
     private static readonly YandexDiskService _service = new();
 
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         var botClient = new TelegramBotClient($"{Secrets.TelegramBotToken}");
 
@@ -28,6 +28,8 @@ class Program
             receiverOptions: receiverOptions,
             cancellationToken: cts.Token
         );
+        
+        await _service.PreloadAllPhotosAsync();
 
         Console.ReadLine();
     }
@@ -49,15 +51,32 @@ class Program
             return;
         }
 
-        var image = await _service.GetRandomImage();
-        await botClient.SendPhotoAsync(
-            chatId: msg.Chat.Id,
-            caption: image.Name,
-            photo: image.File!,
-            replyMarkup: new ReplyKeyboardMarkup(new[] { new KeyboardButton[] { "Ещё" } })
-                { ResizeKeyboard = true },
-            cancellationToken: cts
-        );
+        var replyMarkup = new ReplyKeyboardMarkup(new[] { new KeyboardButton[] { "Ещё" } })
+            { ResizeKeyboard = true };
+        
+        var img = await _service.GetConcreteImage(msg.Text);
+        
+        if (img != null)
+        {
+            await botClient.SendPhotoAsync(
+                chatId: msg.Chat.Id,
+                caption: img.Name,
+                photo: img.File!,
+                replyMarkup: replyMarkup,
+                cancellationToken: cts
+            );
+        }
+        else
+        {
+            var image = await _service.GetRandomImage();
+            await botClient.SendPhotoAsync(
+                chatId: msg.Chat.Id,
+                caption: image.Name,
+                photo: image.File!,
+                replyMarkup: replyMarkup,
+                cancellationToken: cts
+            ); 
+        }
     }
 
     static Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception,

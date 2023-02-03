@@ -28,7 +28,14 @@ public class YandexDiskService
         return randomImage;
     }
 
-    private async Task PreloadAllPhotosAsync()
+    public async Task<Image?> GetConcreteImage(string image)
+    {
+        await PreloadAllPhotosAsync();
+
+        return Images.FirstOrDefault(i => i.Name!.ToLower().Contains(image.ToLower()));
+    }
+
+    public async Task PreloadAllPhotosAsync()
     {
         if (Images.Any()) return;
 
