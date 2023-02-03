@@ -21,6 +21,8 @@ class Program
         {
             AllowedUpdates = Array.Empty<UpdateType>() // receive all update types
         };
+        
+        await _service.PreloadAllPhotosAsync();
 
         botClient.StartReceiving(
             updateHandler: HandleUpdateAsync,
@@ -28,8 +30,6 @@ class Program
             receiverOptions: receiverOptions,
             cancellationToken: cts.Token
         );
-        
-        await _service.PreloadAllPhotosAsync();
 
         Console.ReadLine();
     }
@@ -53,30 +53,16 @@ class Program
 
         var replyMarkup = new ReplyKeyboardMarkup(new[] { new KeyboardButton[] { "Ещё" } })
             { ResizeKeyboard = true };
-        
-        var img = await _service.GetConcreteImage(msg.Text);
-        
-        if (img != null)
-        {
-            await botClient.SendPhotoAsync(
-                chatId: msg.Chat.Id,
-                caption: img.Name,
-                photo: img.File!,
-                replyMarkup: replyMarkup,
-                cancellationToken: cts
-            );
-        }
-        else
-        {
-            var image = await _service.GetRandomImage();
-            await botClient.SendPhotoAsync(
-                chatId: msg.Chat.Id,
-                caption: image.Name,
-                photo: image.File!,
-                replyMarkup: replyMarkup,
-                cancellationToken: cts
-            ); 
-        }
+
+        var img = _service.GetConcreteImage(msg.Text) ?? _service.GetRandomImage();
+
+        await botClient.SendPhotoAsync(
+            chatId: msg.Chat.Id,
+            caption: img.Name,
+            photo: img.File!,
+            replyMarkup: replyMarkup,
+            cancellationToken: cts
+        );
     }
 
     static Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception,
