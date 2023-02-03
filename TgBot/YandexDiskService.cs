@@ -36,6 +36,8 @@ public class YandexDiskService
 
         var jsonString = await response.Content.ReadAsStringAsync();
 
-        Images = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2]);
+        Images = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2])
+            .Where(i => i.Name!.Contains(".jpg"))
+            .ToList();
     }
 }
