@@ -41,6 +41,9 @@ public class YandexDiskService
 
         Images = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2])
             .Where(i => i.Name!.Contains(".jpg"))
+            .Where(i => i.MimeType!.Contains("image/jpeg"))
             .ToList();
+
+        Console.WriteLine("size: " + Images.Count);
     }
 }

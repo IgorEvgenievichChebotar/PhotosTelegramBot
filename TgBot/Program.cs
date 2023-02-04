@@ -76,6 +76,7 @@ class Program
         };
 
         Console.WriteLine(ErrorMessage);
+
         return Task.CompletedTask;
     }
 }
