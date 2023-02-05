@@ -1,4 +1,5 @@
-﻿using Newtonsoft.Json;
+﻿using System.Diagnostics;
+using Newtonsoft.Json;
 
 namespace TgBot;
 
@@ -19,19 +20,17 @@ public class YandexDiskService
 
     public Image GetRandomImage()
     {
-        var randomImage = Images[new Random().Next(Images.Count)];
-
-        Console.WriteLine(randomImage.Name);
-
-        return randomImage;
+        var img = Images[new Random().Next(Images.Count)];
+        return img;
     }
 
-    public Image? GetConcreteImage(string image)
+    public Image GetImage(string image)
     {
-        return Images.FirstOrDefault(i => i.Name!.ToLower().Contains(image.ToLower()));
+        var img = Images.FirstOrDefault(i => i.Name!.ToLower().Contains(image.ToLower()));
+        return img ?? GetRandomImage();
     }
 
-    public async Task PreloadAllPhotosAsync()
+    public async Task PreloadImagesAsync()
     {
         if (Images.Any()) return;
 
@@ -44,6 +43,12 @@ public class YandexDiskService
             .Where(i => i.MimeType!.Contains("image/jpeg"))
             .ToList();
 
-        Console.WriteLine("size: " + Images.Count);
+        Console.WriteLine(Images.Count + " фоток загружено.");
+    }
+
+    public void OpenImageInBrowser(string name)
+    {
+        var url = Secrets.OpenInBrowserUrl + name;
+        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 }

@@ -21,8 +21,7 @@ class Program
         {
             AllowedUpdates = Array.Empty<UpdateType>() // receive all update types
         };
-        
-        await _service.PreloadAllPhotosAsync();
+        await _service.PreloadImagesAsync();
 
         botClient.StartReceiving(
             updateHandler: HandleUpdateAsync,
@@ -34,7 +33,7 @@ class Program
         Console.ReadLine();
     }
 
-    static async Task HandleUpdateAsync(ITelegramBotClient botClient, Update update,
+    static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update,
         CancellationToken cts)
     {
         if (update.Message is not { Text: { } } msg)
@@ -44,23 +43,34 @@ class Program
 
         if (msg.Chat.Username != $"{Secrets.MyUsername}")
         {
-            await botClient.SendTextMessageAsync(
+            await bot.SendTextMessageAsync(
                 chatId: msg.Chat.Id,
                 text: "Нет доступа.",
                 cancellationToken: cts);
             return;
         }
 
-        var replyMarkup = new ReplyKeyboardMarkup(new[] { new KeyboardButton[] { "Ещё" } })
-            { ResizeKeyboard = true };
+        if (msg.Text.Contains("/help"))
+        {
+            await bot.SendTextMessageAsync(
+                chatId: msg.Chat.Id,
+                text: "Доступные комманды:\n" +
+                      "/find <...> - найти фото по названию.\n" +
+                      "/open <...> - открыть фото на диске.\n" +
+                      "Другой ввод будет присылать случайную фотографию.",
+                cancellationToken: cts
+            );
+            return;
+        }
 
-        var img = _service.GetConcreteImage(msg.Text) ?? _service.GetRandomImage();
+        var img = msg.Text.Contains("/find") ? _service.GetImage(msg.Text[6..]) : _service.GetRandomImage();
 
-        await botClient.SendPhotoAsync(
+        await bot.SendPhotoAsync(
             chatId: msg.Chat.Id,
-            caption: img.Name,
+            caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a>",
+            parseMode: ParseMode.Html,
             photo: img.File!,
-            replyMarkup: replyMarkup,
+            replyMarkup: new ReplyKeyboardMarkup(new KeyboardButton("Ещё")){ResizeKeyboard = true},
             cancellationToken: cts
         );
     }
