@@ -26,8 +26,13 @@ public class YandexDiskService
 
     public Image GetImage(string image)
     {
-        var img = Images.FirstOrDefault(i => i.Name!.ToLower().Contains(image.ToLower()));
+        var img = FindImageByName(image);
         return img ?? GetRandomImage();
+    }
+
+    private Image? FindImageByName(string image)
+    {
+        return Images.FirstOrDefault(i => i.Name!.ToLower().Contains(image.ToLower()));
     }
 
     public async Task PreloadImagesAsync()
@@ -48,7 +53,9 @@ public class YandexDiskService
 
     public void OpenImageInBrowser(string name)
     {
-        var url = Secrets.OpenInBrowserUrl + name;
+        var img = FindImageByName(name);
+        if (img == null) return;
+        var url = Secrets.OpenInBrowserUrl + img.Name;
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 }

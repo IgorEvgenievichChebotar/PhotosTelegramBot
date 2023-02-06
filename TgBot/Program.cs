@@ -65,12 +65,18 @@ class Program
 
         var img = msg.Text.Contains("/find") ? _service.GetImage(msg.Text[6..]) : _service.GetRandomImage();
 
+        if (msg.Text.Contains("/open"))
+        {
+            _service.OpenImageInBrowser(msg.Text[6..]);
+            return;
+        }
+
         await bot.SendPhotoAsync(
             chatId: msg.Chat.Id,
             caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a>",
             parseMode: ParseMode.Html,
             photo: img.File!,
-            replyMarkup: new ReplyKeyboardMarkup(new KeyboardButton("Ещё")){ResizeKeyboard = true},
+            replyMarkup: new ReplyKeyboardMarkup(new KeyboardButton("Ещё")) { ResizeKeyboard = true },
             cancellationToken: cts
         );
     }
