@@ -38,82 +38,127 @@ class Program
     private static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update,
         CancellationToken cts)
     {
-        if (update.Message is not { Text: { } } msg)
+        if (update.Message is { Text: { } } msg)
         {
-            return;
-        }
+            var msgText = msg.Text;
+            var chatId = msg.Chat.Id;
 
-        if (msg.Chat.Username != $"{Secrets.MyUsername}")
-        {
-            await bot.SendTextMessageAsync(
-                chatId: msg.Chat.Id,
-                text: "Нет доступа.",
-                cancellationToken: cts,
-                disableNotification: true);
-            return;
-        }
-
-        var text = msg.Text;
-
-        if (text.Contains("/help"))
-        {
-            await bot.SendTextMessageAsync(
-                chatId: msg.Chat.Id,
-                text: "Доступные команды:\n" +
-                      "/find <дата, имя> - найти фото по названию.\n",
-                cancellationToken: cts,
-                disableNotification: true
-            );
-            return;
-        }
-
-        Image img;
-        if (text.Contains("/find"))
-        {
-            if (DateTime.TryParse(text.Split(" ")[1].Replace(".", "-"), out var date))
+            if (msg.Chat.Username != $"{Secrets.MyUsername}")
             {
-                var images = _service.GetImagesByDate(date);
-                if (!images.Any())
-                {
-                    await bot.SendTextMessageAsync(
-                        chatId: msg.Chat.Id,
-                        text: "Нет фотографий за эту дату.",
-                        cancellationToken: cts,
-                        disableNotification: true);
-                }
-
-                await bot.SendMediaGroupAsync(
-                    chatId: msg.Chat.Id,
-                    media: images.Take(10).Select(i => new InputMediaPhoto(i.File!)),
-                    cancellationToken: cts,
-                    disableNotification: true
-                );
-
-                if (images.Count > 10)
-                {
-                    return; //todo
-                }
-
+                await NoAccess(bot, cts, chatId);
                 return;
             }
 
-            img = _service.GetImage(text.Split(" ")[1]);
-        }
-        else
-        {
-            img = _service.GetRandomImage();
-        }
+            if (msgText.Contains("/start"))
+            {
+                await Start(bot, cts, msg, chatId);
+            }
 
+            if (msgText.Contains("/help"))
+            {
+                await Help(bot, cts, chatId);
+                return;
+            }
+
+            Image img;
+            if (msgText.Contains("/find"))
+            {
+                img = await Find(bot, cts, msgText, chatId);
+            }
+            else
+            {
+                img = _service.GetRandomImage();
+            }
+
+            await SendPhoto(bot, cts, chatId, img);
+        }
+        else if (update.Type == UpdateType.CallbackQuery)
+        {
+            var fromId = update.CallbackQuery!.From.Id;
+            var queryData = update.CallbackQuery.Data!;
+
+            await Find(bot, cts, queryData, fromId);
+        }
+    }
+
+    private static async Task Start(ITelegramBotClient bot, CancellationToken cts, Message msg, long chatId)
+    {
+        Console.WriteLine($"Бот запущен для {msg.Chat.Username}");
+        await bot.SendTextMessageAsync(
+            text: "Ещё?",
+            chatId: chatId,
+            replyMarkup: new ReplyKeyboardMarkup(new KeyboardButton("Ещё")) { ResizeKeyboard = true },
+            cancellationToken: cts);
+    }
+
+    private static async Task NoAccess(ITelegramBotClient bot, CancellationToken cts, long chatId)
+    {
+        Console.WriteLine("Нет доступа.");
+        await bot.SendTextMessageAsync(
+            chatId: chatId,
+            text: "Нет доступа.",
+            cancellationToken: cts,
+            disableNotification: true);
+        return;
+    }
+
+    private static async Task Help(ITelegramBotClient bot, CancellationToken cts, long chatId)
+    {
+        Console.WriteLine("Отправлен список помощи");
+        await bot.SendTextMessageAsync(
+            chatId: chatId,
+            text: "Доступные команды:\n" +
+                  "/find <дата, имя> - найти фото по названию.\n",
+            cancellationToken: cts,
+            disableNotification: true
+        );
+        return;
+    }
+
+    private static async Task SendPhoto(ITelegramBotClient bot, CancellationToken cts, long chatId, Image img)
+    {
+        Console.WriteLine("Отправлено фото");
         await bot.SendPhotoAsync(
-            chatId: msg.Chat.Id,
+            chatId: chatId,
             caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
             parseMode: ParseMode.Html,
             photo: img.File!,
-            replyMarkup: new ReplyKeyboardMarkup(new KeyboardButton("Ещё")) { ResizeKeyboard = true },
+            replyMarkup: new InlineKeyboardMarkup(
+                InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}")),
             cancellationToken: cts,
             disableNotification: true
         );
     }
+
+    private static async Task<Image> Find(ITelegramBotClient bot, CancellationToken cts, string msgText, long chatId)
+    {
+        if (DateTime.TryParse(msgText.Split(" ")[1].Replace(".", "-"), out var date))
+        {
+            var images = _service.GetImagesByDate(date);
+            if (!images.Any())
+            {
+                Console.WriteLine("Нет фотографий за эту дату.");
+                await bot.SendTextMessageAsync(
+                    chatId: chatId,
+                    text: "Нет фотографий за эту дату.",
+                    cancellationToken: cts,
+                    disableNotification: true);
+            }
+
+            Console.WriteLine("Отправлена группа фотографий");
+            var set = new HashSet<Image>(images);
+            await bot.SendMediaGroupAsync(
+                chatId: chatId,
+                media: set.OrderBy(i => Guid.NewGuid()).Take(10).Select(i => new InputMediaPhoto(i.File!)),
+                cancellationToken: cts,
+                disableNotification: true
+            );
+        }
+
+        var img = _service.GetImage(msgText.Split(" ")[1]);
+        return img;
+    }
+
 
     private static Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception,
         CancellationToken cts)
