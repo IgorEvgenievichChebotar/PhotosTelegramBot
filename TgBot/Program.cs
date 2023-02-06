@@ -60,8 +60,7 @@ class Program
             await bot.SendTextMessageAsync(
                 chatId: msg.Chat.Id,
                 text: "Доступные команды:\n" +
-                      "/find <дата, имя> - найти фото по названию.\n" +
-                      "/open <имя> - открыть фото на диске.\n",
+                      "/find <дата, имя> - найти фото по названию.\n",
                 cancellationToken: cts,
                 disableNotification: true
             );
@@ -103,12 +102,6 @@ class Program
         else
         {
             img = _service.GetRandomImage();
-        }
-
-        if (text.Contains("/open"))
-        {
-            _service.OpenImageInBrowser(text.Split(" ")[1]);
-            return;
         }
 
         await bot.SendPhotoAsync(
