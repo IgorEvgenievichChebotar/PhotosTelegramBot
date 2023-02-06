@@ -9,7 +9,7 @@ namespace TgBot;
 
 class Program
 {
-    private static readonly YandexDiskService _service = new();
+    private static readonly IYandexDiskService _service = new YandexDiskService();
 
     public static async Task Main(string[] args)
     {
@@ -24,6 +24,7 @@ class Program
 
         await _service.PreloadImagesAsync();
 
+
         bot.StartReceiving(
             updateHandler: HandleUpdateAsync,
             pollingErrorHandler: HandlePollingErrorAsync,
@@ -34,7 +35,7 @@ class Program
         Console.ReadLine();
     }
 
-    static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update,
+    private static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update,
         CancellationToken cts)
     {
         if (update.Message is not { Text: { } } msg)
@@ -47,7 +48,8 @@ class Program
             await bot.SendTextMessageAsync(
                 chatId: msg.Chat.Id,
                 text: "Нет доступа.",
-                cancellationToken: cts);
+                cancellationToken: cts,
+                disableNotification: true);
             return;
         }
 
@@ -58,10 +60,10 @@ class Program
             await bot.SendTextMessageAsync(
                 chatId: msg.Chat.Id,
                 text: "Доступные команды:\n" +
-                      "/find <...> - найти фото по названию.\n" +
-                      "/open <...> - открыть фото на диске.\n" +
-                      "Другой ввод будет присылать случайную фотографию.",
-                cancellationToken: cts
+                      "/find <дата, имя> - найти фото по названию.\n" +
+                      "/open <имя> - открыть фото на диске.\n",
+                cancellationToken: cts,
+                disableNotification: true
             );
             return;
         }
@@ -69,18 +71,34 @@ class Program
         Image img;
         if (text.Contains("/find"))
         {
-            if (DateOnly.TryParse(text[6..], out var date))
+            if (DateTime.TryParse(text.Split(" ")[1].Replace(".", "-"), out var date))
             {
-                var images = _service.GetImagesByDate(date).Take(10); // todo
+                var images = _service.GetImagesByDate(date);
+                if (!images.Any())
+                {
+                    await bot.SendTextMessageAsync(
+                        chatId: msg.Chat.Id,
+                        text: "Нет фотографий за эту дату.",
+                        cancellationToken: cts,
+                        disableNotification: true);
+                }
+
                 await bot.SendMediaGroupAsync(
                     chatId: msg.Chat.Id,
-                    media: images.Select(i => new InputMediaPhoto(i.File!)),
-                    cancellationToken: cts
+                    media: images.Take(10).Select(i => new InputMediaPhoto(i.File!)),
+                    cancellationToken: cts,
+                    disableNotification: true
                 );
+
+                if (images.Count > 10)
+                {
+                    return; //todo
+                }
+
                 return;
             }
 
-            img = _service.GetImage(text[6..]);
+            img = _service.GetImage(text.Split(" ")[1]);
         }
         else
         {
@@ -89,21 +107,22 @@ class Program
 
         if (text.Contains("/open"))
         {
-            _service.OpenImageInBrowser(text[6..]);
+            _service.OpenImageInBrowser(text.Split(" ")[1]);
             return;
         }
 
         await bot.SendPhotoAsync(
             chatId: msg.Chat.Id,
-            caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a>",
+            caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
             parseMode: ParseMode.Html,
             photo: img.File!,
             replyMarkup: new ReplyKeyboardMarkup(new KeyboardButton("Ещё")) { ResizeKeyboard = true },
-            cancellationToken: cts
+            cancellationToken: cts,
+            disableNotification: true
         );
     }
 
-    static Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception,
+    private static Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception,
         CancellationToken cts)
     {
         var ErrorMessage = exception switch

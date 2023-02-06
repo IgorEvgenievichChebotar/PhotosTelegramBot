@@ -8,7 +8,8 @@ public interface IYandexDiskService
     Image GetRandomImage();
     Image GetImage(string image);
     void OpenImageInBrowser(string name);
-    IEnumerable<Image> GetImagesByDate(DateOnly date);
+    ICollection<Image> GetImagesByDate(DateTime date);
+    Task PreloadImagesAsync();
 }
 
 public class YandexDiskService : IYandexDiskService
@@ -51,7 +52,7 @@ public class YandexDiskService : IYandexDiskService
 
         var jsonString = await response.Content.ReadAsStringAsync();
 
-        Images = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2])
+        Images = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2], new ImageExifConverter())
             .Where(i => i.Name!.Contains(".jpg"))
             .Where(i => i.MimeType!.Contains("image/jpeg"))
             .ToList();
@@ -67,9 +68,9 @@ public class YandexDiskService : IYandexDiskService
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 
-    public IEnumerable<Image> GetImagesByDate(DateOnly date)
+    public ICollection<Image> GetImagesByDate(DateTime date)
     {
-        var images = Images.Where(i => i.Date == date);
+        var images = Images.Where(i => i.DateTime.Date == date).ToList();
         return images;
     }
 }
