@@ -13,7 +13,7 @@ class Program
 
     public static async Task Main(string[] args)
     {
-        var botClient = new TelegramBotClient($"{Secrets.TelegramBotToken}");
+        var bot = new TelegramBotClient($"{Secrets.TelegramBotToken}");
 
         using CancellationTokenSource cts = new();
 
@@ -21,9 +21,10 @@ class Program
         {
             AllowedUpdates = Array.Empty<UpdateType>() // receive all update types
         };
+
         await _service.PreloadImagesAsync();
 
-        botClient.StartReceiving(
+        bot.StartReceiving(
             updateHandler: HandleUpdateAsync,
             pollingErrorHandler: HandlePollingErrorAsync,
             receiverOptions: receiverOptions,
@@ -50,11 +51,13 @@ class Program
             return;
         }
 
-        if (msg.Text.Contains("/help"))
+        var text = msg.Text;
+
+        if (text.Contains("/help"))
         {
             await bot.SendTextMessageAsync(
                 chatId: msg.Chat.Id,
-                text: "Доступные комманды:\n" +
+                text: "Доступные команды:\n" +
                       "/find <...> - найти фото по названию.\n" +
                       "/open <...> - открыть фото на диске.\n" +
                       "Другой ввод будет присылать случайную фотографию.",
@@ -63,11 +66,30 @@ class Program
             return;
         }
 
-        var img = msg.Text.Contains("/find") ? _service.GetImage(msg.Text[6..]) : _service.GetRandomImage();
-
-        if (msg.Text.Contains("/open"))
+        Image img;
+        if (text.Contains("/find"))
         {
-            _service.OpenImageInBrowser(msg.Text[6..]);
+            if (DateOnly.TryParse(text[6..], out var date))
+            {
+                var images = _service.GetImagesByDate(date).Take(10); // todo
+                await bot.SendMediaGroupAsync(
+                    chatId: msg.Chat.Id,
+                    media: images.Select(i => new InputMediaPhoto(i.File!)),
+                    cancellationToken: cts
+                );
+                return;
+            }
+
+            img = _service.GetImage(text[6..]);
+        }
+        else
+        {
+            img = _service.GetRandomImage();
+        }
+
+        if (text.Contains("/open"))
+        {
+            _service.OpenImageInBrowser(text[6..]);
             return;
         }
 

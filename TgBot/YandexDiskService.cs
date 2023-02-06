@@ -3,7 +3,15 @@ using Newtonsoft.Json;
 
 namespace TgBot;
 
-public class YandexDiskService
+public interface IYandexDiskService
+{
+    Image GetRandomImage();
+    Image GetImage(string image);
+    void OpenImageInBrowser(string name);
+    IEnumerable<Image> GetImagesByDate(DateOnly date);
+}
+
+public class YandexDiskService : IYandexDiskService
 {
     private List<Image> Images;
     private readonly HttpClient _client;
@@ -39,7 +47,7 @@ public class YandexDiskService
     {
         if (Images.Any()) return;
 
-        var response = await _client.GetAsync($"{Secrets.GeneralRequest}");
+        var response = await _client.GetAsync($"{Secrets.GetAllImagesRequest}");
 
         var jsonString = await response.Content.ReadAsStringAsync();
 
@@ -57,5 +65,11 @@ public class YandexDiskService
         if (img == null) return;
         var url = Secrets.OpenInBrowserUrl + img.Name;
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
+    }
+
+    public IEnumerable<Image> GetImagesByDate(DateOnly date)
+    {
+        var images = Images.Where(i => i.Date == date);
+        return images;
     }
 }
