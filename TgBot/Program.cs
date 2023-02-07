@@ -24,10 +24,29 @@ class Program
 
         await _service.PreloadImagesAsync();
 
-
         bot.StartReceiving(
-            updateHandler: HandleUpdateAsync,
-            pollingErrorHandler: HandlePollingErrorAsync,
+            updateHandler: async (botClient, update, cancellationToken) =>
+            {
+                try
+                {
+                    await HandleUpdateAsync(botClient, update, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error occurred in HandleUpdateAsync: " + ex.Message);
+                }
+            },
+            pollingErrorHandler: async (botClient, exception, cancellationToken) =>
+            {
+                try
+                {
+                    await HandlePollingErrorAsync(botClient, exception, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine("Error occurred in HandlePollingErrorAsync: " + ex.Message);
+                }
+            },
             receiverOptions: receiverOptions,
             cancellationToken: cts.Token
         );
@@ -145,14 +164,21 @@ class Program
                     disableNotification: true);
             }
 
-            Console.WriteLine("Отправлена группа фотографий");
-            var set = new HashSet<Image>(images);
-            await bot.SendMediaGroupAsync(
-                chatId: chatId,
-                media: set.OrderBy(i => Guid.NewGuid()).Take(10).Select(i => new InputMediaPhoto(i.File!)),
-                cancellationToken: cts,
-                disableNotification: true
-            );
+            var queue = new Queue<Image>(images);
+            while (queue.Any())
+            {
+                Console.WriteLine("Отправлена группа фотографий");
+                await bot.SendMediaGroupAsync(
+                    chatId: chatId,
+                    media: queue.Take(10).Select(i => new InputMediaPhoto(i.File!)),
+                    cancellationToken: cts,
+                    disableNotification: true
+                );
+                for (var i = 0; i < 10 && queue.Any(); i++)
+                {
+                    queue.Dequeue();
+                }
+            }
         }
 
         var img = _service.GetImage(msgText.Split(" ")[1]);
