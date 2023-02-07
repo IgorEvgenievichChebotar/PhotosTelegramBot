@@ -42,7 +42,7 @@ class Program
                     Console.WriteLine("Error occurred in HandleUpdateAsync: " + ex.Message);
                 }
             },
-            pollingErrorHandler: async (botClient, exception, cancellationToken) =>
+            pollingErrorHandler: async (_, exception, _) =>
             {
                 try
                 {
@@ -123,13 +123,13 @@ class Program
                     await FindAsync(bot, cts, cmd[1], fromId);
                     return;
                 case "/change":
-                    await ChangeAsync(bot, cts, cmd[1], fromId);
+                    await ChangeDirAsync(bot, cts, cmd[1], fromId);
                     break;
             }
         }
     }
 
-    private static async Task ChangeAsync(ITelegramBotClient bot, CancellationToken cts, string data, long fromId)
+    private static async Task ChangeDirAsync(ITelegramBotClient bot, CancellationToken cts, string data, long fromId)
     {
         var date = data.Replace("_", " ");
         if (Secrets.PathToDir != date)
@@ -154,7 +154,7 @@ class Program
             chatId: chatId,
             replyMarkup: defaultReplyKeyboardMarkup,
             cancellationToken: cts);
-        await SendPhotoAsync(bot: bot, cts: cts, chatId: chatId, img: _service.GetRandomImage());
+        await SendPhotoAsync(bot, cts, chatId, _service.GetRandomImage());
     }
 
     private static async Task NoAccessAsync(ITelegramBotClient bot, CancellationToken cts, long chatId)
@@ -173,7 +173,10 @@ class Program
         await bot.SendTextMessageAsync(
             chatId: chatId,
             text: "Доступные команды:\n" +
-                  "/find <дата, имя> - найти фото по названию.\n",
+                  "/find <дата, имя> - найти фото по названию.\n" + 
+                  "/changedir <имя> - сменить папку.\n" + 
+                  "/help - доступные команды.\n" + 
+                  "/start - начало работы бота.\n",
             cancellationToken: cts,
             disableNotification: true
         );
@@ -198,24 +201,6 @@ class Program
     {
         if (DateTime.TryParse(data.Replace(".", "-"), out var date))
         {
-            /*var images = _service.GetImagesByDate(date);
-
-            var queue = new Queue<Image>(images);
-            while (queue.Any())
-            {
-                Console.WriteLine("Отправлена группа фотографий");
-                await bot.SendMediaGroupAsync(
-                    chatId: chatId,
-                    media: queue.Take(10).Select(i => new InputMediaPhoto(i.File!)),
-                    cancellationToken: cts,
-                    disableNotification: true
-                );
-                for (var i = 0; i < 10 && queue.Any(); i++)
-                {
-                    queue.Dequeue();
-                }
-            }*/
-
             var img = _service.GetRandomImage(date);
             await SendPhotoAsync(bot, cts, chatId, img);
             return;
