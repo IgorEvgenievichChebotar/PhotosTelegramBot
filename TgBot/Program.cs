@@ -46,7 +46,7 @@ class Program
             {
                 try
                 {
-                    await HandlePollingErrorAsync(botClient, exception, cancellationToken);
+                    await HandlePollingErrorAsync(exception);
                 }
                 catch (Exception ex)
                 {
@@ -72,7 +72,7 @@ class Program
 
             if (msg.Chat.Username != $"{Secrets.MyUsername}")
             {
-                await NoAccess(bot, cts, chatId);
+                await NoAccessAsync(bot, cts, chatId);
                 return;
             }
 
@@ -80,13 +80,13 @@ class Program
             switch (cmd[0])
             {
                 case "/start":
-                    await Start(bot, cts, msg, chatId);
+                    await StartAsync(bot, cts, msg, chatId);
                     return;
                 case "/help":
-                    await Help(bot, cts, chatId);
+                    await HelpAsync(bot, cts, chatId);
                     return;
                 case "/find":
-                    await Find(bot, cts, msgText, chatId);
+                    await FindAsync(bot, cts, msgText, chatId);
                     return;
                 default:
                     img = _service.GetRandomImage();
@@ -108,7 +108,7 @@ class Program
             }
             else
             {
-                await SendPhoto(bot, cts, chatId, img);
+                await SendPhotoAsync(bot, cts, chatId, img);
             }
         }
         else if (update.Type == UpdateType.CallbackQuery)
@@ -120,16 +120,16 @@ class Program
             switch (cmd[0])
             {
                 case "/find":
-                    await Find(bot, cts, cmd[1], fromId);
+                    await FindAsync(bot, cts, cmd[1], fromId);
                     return;
                 case "/change":
-                    await Change(bot, cts, cmd[1], fromId);
+                    await ChangeAsync(bot, cts, cmd[1], fromId);
                     break;
             }
         }
     }
 
-    private static async Task Change(ITelegramBotClient bot, CancellationToken cts, string data, long fromId)
+    private static async Task ChangeAsync(ITelegramBotClient bot, CancellationToken cts, string data, long fromId)
     {
         var date = data.Replace("_", " ");
         if (Secrets.PathToDir != date)
@@ -146,7 +146,7 @@ class Program
             disableNotification: true);
     }
 
-    private static async Task Start(ITelegramBotClient bot, CancellationToken cts, Message msg, long chatId)
+    private static async Task StartAsync(ITelegramBotClient bot, CancellationToken cts, Message msg, long chatId)
     {
         Console.WriteLine($"Бот запущен для {msg.Chat.Username}");
         await bot.SendTextMessageAsync(
@@ -154,10 +154,10 @@ class Program
             chatId: chatId,
             replyMarkup: defaultReplyKeyboardMarkup,
             cancellationToken: cts);
-        await SendPhoto(bot: bot, cts: cts, chatId: chatId, img: _service.GetRandomImage());
+        await SendPhotoAsync(bot: bot, cts: cts, chatId: chatId, img: _service.GetRandomImage());
     }
 
-    private static async Task NoAccess(ITelegramBotClient bot, CancellationToken cts, long chatId)
+    private static async Task NoAccessAsync(ITelegramBotClient bot, CancellationToken cts, long chatId)
     {
         Console.WriteLine("Нет доступа.");
         await bot.SendTextMessageAsync(
@@ -167,7 +167,7 @@ class Program
             disableNotification: true);
     }
 
-    private static async Task Help(ITelegramBotClient bot, CancellationToken cts, long chatId)
+    private static async Task HelpAsync(ITelegramBotClient bot, CancellationToken cts, long chatId)
     {
         Console.WriteLine("Отправлен список помощи");
         await bot.SendTextMessageAsync(
@@ -179,7 +179,7 @@ class Program
         );
     }
 
-    private static async Task SendPhoto(ITelegramBotClient bot, CancellationToken cts, long chatId, Image img)
+    private static async Task SendPhotoAsync(ITelegramBotClient bot, CancellationToken cts, long chatId, Image img)
     {
         Console.WriteLine("Отправлено фото");
         await bot.SendPhotoAsync(
@@ -194,20 +194,11 @@ class Program
         );
     }
 
-    private static async Task Find(ITelegramBotClient bot, CancellationToken cts, string data, long chatId)
+    private static async Task FindAsync(ITelegramBotClient bot, CancellationToken cts, string data, long chatId)
     {
         if (DateTime.TryParse(data.Replace(".", "-"), out var date))
         {
-            var images = _service.GetImagesByDate(date);
-            if (!images.Any())
-            {
-                Console.WriteLine("Нет фотографий за эту дату.");
-                await bot.SendTextMessageAsync(
-                    chatId: chatId,
-                    text: "Нет фотографий за эту дату.",
-                    cancellationToken: cts,
-                    disableNotification: true);
-            }
+            /*var images = _service.GetImagesByDate(date);
 
             var queue = new Queue<Image>(images);
             while (queue.Any())
@@ -223,17 +214,18 @@ class Program
                 {
                     queue.Dequeue();
                 }
-            }
+            }*/
 
+            var img = _service.GetRandomImage(date);
+            await SendPhotoAsync(bot, cts, chatId, img);
             return;
         }
 
-        await SendPhoto(bot, cts, chatId, _service.GetImage(data.Split(" ")[1]));
+        await SendPhotoAsync(bot, cts, chatId, _service.GetImage(data.Split(" ")[1]));
     }
 
 
-    private static Task HandlePollingErrorAsync(ITelegramBotClient botClient, Exception exception,
-        CancellationToken cts)
+    private static Task HandlePollingErrorAsync(Exception exception)
     {
         var ErrorMessage = exception switch
         {
