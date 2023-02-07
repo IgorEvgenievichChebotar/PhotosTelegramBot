@@ -1,9 +1,17 @@
-﻿using Telegram.Bot;
+﻿using System.Diagnostics;
+using SixLabors.ImageSharp.Processing.Processors.Transforms;
+using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using Size = SixLabors.ImageSharp.Size;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
+using System.IO;
+using System.Net.Http;
+using SixLabors.ImageSharp.Formats.Jpeg;
 
 namespace TgBot;
 
@@ -168,7 +176,8 @@ class Program
             text: "Этот бот умеет присылать фотки с яндекс диска.",
             chatId: settings.ChatId!,
             replyMarkup: defaultReplyKeyboardMarkup,
-            cancellationToken: settings.CancellationToken);
+            cancellationToken: settings.CancellationToken,
+            disableNotification: true);
     }
 
     private static async Task NoAccessAsync(Settings settings)
@@ -204,12 +213,53 @@ class Program
             chatId: settings.ChatId!,
             caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
             parseMode: ParseMode.Html,
-            photo: img.File!,
+            photo: (img.Size < 1_000_000 ? img.File! : await GetThumbnailImage(img))!,
             replyMarkup: new InlineKeyboardMarkup(
                 InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}")),
             cancellationToken: settings.CancellationToken,
             disableNotification: true
         );
+    }
+
+    private static async Task<FileStream> GetThumbnailImage(Image img)
+    {
+        var startNew = Stopwatch.StartNew();
+        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс - начало");
+
+        using var client = new HttpClient();
+
+        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс new HttpClient()");
+
+        var response = await client.GetAsync(img.File);
+
+        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс на GetAsync");
+
+        var imageStream = await response.Content.ReadAsStreamAsync();
+
+        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс на запрос");
+
+        using var image = SixLabors.ImageSharp.Image.Load(imageStream, out _);
+
+        image.Mutate(x => x.Resize(new ResizeOptions
+        {
+            Size = new Size(3000, 2000),
+            Mode = ResizeMode.Max,
+            Sampler = new BicubicResampler()
+        }));
+
+        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс на mutate");
+
+        var filePath = Path.GetTempFileName();
+
+        await image.SaveAsJpegAsync(filePath, new JpegEncoder { Quality = 50, ColorType = JpegColorType.Rgb });
+
+        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс на save");
+
+        var thumbnailImage = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+
+        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс на сжатие фотки {img.Name}");
+
+        return thumbnailImage;
     }
 
     private static async Task FindAsync(Settings settings)
