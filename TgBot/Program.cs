@@ -11,6 +11,12 @@ class Program
 {
     private static readonly IYandexDiskService _service = new YandexDiskService();
 
+    private static readonly ReplyKeyboardMarkup defaultReplyKeyboardMarkup = new(new[]
+    {
+        new KeyboardButton("Ещё"),
+        new KeyboardButton("Сменить папку")
+    }) { ResizeKeyboard = true };
+
     public static async Task Main(string[] args)
     {
         var bot = new TelegramBotClient($"{Secrets.TelegramBotToken}");
@@ -22,7 +28,7 @@ class Program
             AllowedUpdates = Array.Empty<UpdateType>() // receive all update types
         };
 
-        await _service.PreloadImagesAsync();
+        await _service.LoadImagesAsync();
 
         bot.StartReceiving(
             updateHandler: async (botClient, update, cancellationToken) =>
@@ -62,52 +68,93 @@ class Program
             var msgText = msg.Text;
             var chatId = msg.Chat.Id;
 
+            var cmd = msgText.Split(" ");
+
             if (msg.Chat.Username != $"{Secrets.MyUsername}")
             {
                 await NoAccess(bot, cts, chatId);
                 return;
             }
 
-            if (msgText.Contains("/start"))
-            {
-                await Start(bot, cts, msg, chatId);
-            }
-
-            if (msgText.Contains("/help"))
-            {
-                await Help(bot, cts, chatId);
-                return;
-            }
-
             Image img;
-            if (msgText.Contains("/find"))
+            switch (cmd[0])
             {
-                img = await Find(bot, cts, msgText, chatId);
+                case "/start":
+                    await Start(bot, cts, msg, chatId);
+                    return;
+                case "/help":
+                    await Help(bot, cts, chatId);
+                    return;
+                case "/find":
+                    await Find(bot, cts, msgText, chatId);
+                    return;
+                default:
+                    img = _service.GetRandomImage();
+                    break;
+            }
+
+            if (msgText.ToLower().Contains("сменить папку"))
+            {
+                var dirs = await _service.GetDirs();
+
+                await bot.SendTextMessageAsync(
+                    chatId: chatId,
+                    text: "Выбери из списка",
+                    replyMarkup: new InlineKeyboardMarkup(
+                        dirs.Select(d => new[]
+                            { InlineKeyboardButton.WithCallbackData(d.Name!, $"/change {d.Name}") })
+                    ),
+                    cancellationToken: cts);
             }
             else
             {
-                img = _service.GetRandomImage();
+                await SendPhoto(bot, cts, chatId, img);
             }
-
-            await SendPhoto(bot, cts, chatId, img);
         }
         else if (update.Type == UpdateType.CallbackQuery)
         {
             var fromId = update.CallbackQuery!.From.Id;
             var queryData = update.CallbackQuery.Data!;
+            var cmd = queryData.Split(" ");
 
-            await Find(bot, cts, queryData, fromId);
+            switch (cmd[0])
+            {
+                case "/find":
+                    await Find(bot, cts, cmd[1], fromId);
+                    return;
+                case "/change":
+                    await Change(bot, cts, cmd[1], fromId);
+                    break;
+            }
         }
+    }
+
+    private static async Task Change(ITelegramBotClient bot, CancellationToken cts, string data, long fromId)
+    {
+        var date = data.Replace("_", " ");
+        if (Secrets.PathToDir != date)
+        {
+            Secrets.PathToDir = date;
+            await _service.LoadImagesAsync();
+        }
+
+        await bot.SendTextMessageAsync(
+            chatId: fromId,
+            text: $"Папка изменена на {Secrets.PathToDir}",
+            replyMarkup: defaultReplyKeyboardMarkup,
+            cancellationToken: cts,
+            disableNotification: true);
     }
 
     private static async Task Start(ITelegramBotClient bot, CancellationToken cts, Message msg, long chatId)
     {
         Console.WriteLine($"Бот запущен для {msg.Chat.Username}");
         await bot.SendTextMessageAsync(
-            text: "Ещё?",
+            text: "Этот бот умеет присылать фотки с яндекс диска.",
             chatId: chatId,
-            replyMarkup: new ReplyKeyboardMarkup(new KeyboardButton("Ещё")) { ResizeKeyboard = true },
+            replyMarkup: defaultReplyKeyboardMarkup,
             cancellationToken: cts);
+        await SendPhoto(bot: bot, cts: cts, chatId: chatId, img: _service.GetRandomImage());
     }
 
     private static async Task NoAccess(ITelegramBotClient bot, CancellationToken cts, long chatId)
@@ -118,7 +165,6 @@ class Program
             text: "Нет доступа.",
             cancellationToken: cts,
             disableNotification: true);
-        return;
     }
 
     private static async Task Help(ITelegramBotClient bot, CancellationToken cts, long chatId)
@@ -131,7 +177,6 @@ class Program
             cancellationToken: cts,
             disableNotification: true
         );
-        return;
     }
 
     private static async Task SendPhoto(ITelegramBotClient bot, CancellationToken cts, long chatId, Image img)
@@ -149,9 +194,9 @@ class Program
         );
     }
 
-    private static async Task<Image> Find(ITelegramBotClient bot, CancellationToken cts, string msgText, long chatId)
+    private static async Task Find(ITelegramBotClient bot, CancellationToken cts, string data, long chatId)
     {
-        if (DateTime.TryParse(msgText.Split(" ")[1].Replace(".", "-"), out var date))
+        if (DateTime.TryParse(data.Replace(".", "-"), out var date))
         {
             var images = _service.GetImagesByDate(date);
             if (!images.Any())
@@ -179,10 +224,11 @@ class Program
                     queue.Dequeue();
                 }
             }
+
+            return;
         }
 
-        var img = _service.GetImage(msgText.Split(" ")[1]);
-        return img;
+        await SendPhoto(bot, cts, chatId, _service.GetImage(data.Split(" ")[1]));
     }
 
 
