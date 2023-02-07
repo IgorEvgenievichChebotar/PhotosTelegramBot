@@ -63,34 +63,48 @@ class Program
     private static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update,
         CancellationToken cts)
     {
+        var settings = new Settings
+        {
+            Bot = bot,
+            CancellationToken = cts,
+            Update = update,
+        };
+
         if (update.Message is { Text: { } } msg)
         {
             var msgText = msg.Text;
             var chatId = msg.Chat.Id;
 
-            var cmd = msgText.Split(" ");
+            settings.ChatId = chatId;
+            settings.Cmd = msgText.Split(" ")[0];
+            if (msgText.Split(" ").Length > 1)
+            {
+                settings.Query = msgText.Split(" ")[1];
+            }
 
             if (msg.Chat.Username != $"{Secrets.MyUsername}")
             {
-                await NoAccessAsync(bot, cts, chatId);
+                await NoAccessAsync(settings);
                 return;
             }
 
-            Image img;
-            switch (cmd[0])
+            switch (settings.Cmd)
             {
                 case "/start":
-                    await StartAsync(bot, cts, msg, chatId);
-                    await HelpAsync(bot, cts, chatId);
+                    await StartAsync(settings);
+                    await HelpAsync(settings);
                     return;
                 case "/help":
-                    await HelpAsync(bot, cts, chatId);
+                    await HelpAsync(settings);
                     return;
                 case "/find":
-                    await FindAsync(bot, cts, msgText, chatId);
+                    await FindAsync(settings);
+                    return;
+                case "/changedir":
+                    await ChangeDirAsync(settings);
                     return;
                 default:
-                    img = _service.GetRandomImage();
+                    settings.Image = _service.GetRandomImage();
                     break;
             }
 
@@ -109,104 +123,107 @@ class Program
             }
             else
             {
-                await SendPhotoAsync(bot, cts, chatId, img);
+                await SendPhotoAsync(settings);
             }
         }
         else if (update.Type == UpdateType.CallbackQuery)
         {
-            var fromId = update.CallbackQuery!.From.Id;
-            var queryData = update.CallbackQuery.Data!;
-            var cmd = queryData.Split(" ");
+            settings.Cmd = update.CallbackQuery!.Data!.Split(" ")[0];
+            settings.Query = update.CallbackQuery!.Data!.Split(" ")[1];
+            settings.ChatId = update.CallbackQuery!.From.Id;
 
-            switch (cmd[0])
+            switch (settings.Cmd)
             {
                 case "/find":
-                    await FindAsync(bot, cts, cmd[1], fromId);
+                    await FindAsync(settings);
                     return;
                 case "/change":
-                    await ChangeDirAsync(bot, cts, cmd[1], fromId);
+                    await ChangeDirAsync(settings);
                     break;
             }
         }
     }
 
-    private static async Task ChangeDirAsync(ITelegramBotClient bot, CancellationToken cts, string data, long fromId)
+    private static async Task ChangeDirAsync(Settings settings)
     {
-        var date = data.Replace("_", " ");
+        var date = settings.Query!.Replace("_", " ");
         if (Secrets.PathToDir != date)
         {
             Secrets.PathToDir = date;
             await _service.LoadImagesAsync();
         }
 
-        await bot.SendTextMessageAsync(
-            chatId: fromId,
+        await settings.Bot.SendTextMessageAsync(
+            chatId: settings.ChatId,
             text: $"Папка изменена на {Secrets.PathToDir}",
             replyMarkup: defaultReplyKeyboardMarkup,
-            cancellationToken: cts,
+            cancellationToken: settings.CancellationToken,
             disableNotification: true);
     }
 
-    private static async Task StartAsync(ITelegramBotClient bot, CancellationToken cts, Message msg, long chatId)
+    private static async Task StartAsync(Settings settings)
     {
-        Console.WriteLine($"Бот запущен для {msg.Chat.Username}");
-        await bot.SendTextMessageAsync(
+        Console.WriteLine($"Бот запущен для {settings.Update!.Message!.Chat.Username}");
+        await settings.Bot.SendTextMessageAsync(
             text: "Этот бот умеет присылать фотки с яндекс диска.",
-            chatId: chatId,
+            chatId: settings.ChatId!,
             replyMarkup: defaultReplyKeyboardMarkup,
-            cancellationToken: cts);
+            cancellationToken: settings.CancellationToken);
     }
 
-    private static async Task NoAccessAsync(ITelegramBotClient bot, CancellationToken cts, long chatId)
+    private static async Task NoAccessAsync(Settings settings)
     {
         Console.WriteLine("Нет доступа.");
-        await bot.SendTextMessageAsync(
-            chatId: chatId,
+        await settings.Bot.SendTextMessageAsync(
+            chatId: settings.ChatId!,
             text: "Нет доступа.",
-            cancellationToken: cts,
+            cancellationToken: settings.CancellationToken,
             disableNotification: true);
     }
 
-    private static async Task HelpAsync(ITelegramBotClient bot, CancellationToken cts, long chatId)
+    private static async Task HelpAsync(Settings settings)
     {
         Console.WriteLine("Отправлен список помощи");
-        await bot.SendTextMessageAsync(
-            chatId: chatId,
+        await settings.Bot.SendTextMessageAsync(
+            chatId: settings.ChatId,
             text: "Доступные команды:\n" +
                   "/find <дата, имя> - найти фото по названию.\n" +
                   "/changedir <имя> - сменить папку.\n" +
                   "/help - доступные команды.\n" +
                   "/start - начало работы бота.\n",
-            cancellationToken: cts,
+            cancellationToken: settings.CancellationToken,
             disableNotification: true
         );
     }
 
-    private static async Task SendPhotoAsync(ITelegramBotClient bot, CancellationToken cts, long chatId, Image img)
+    private static async Task SendPhotoAsync(Settings settings)
     {
         Console.WriteLine("Отправлено фото");
-        await bot.SendPhotoAsync(
-            chatId: chatId,
+        var img = settings.Image!;
+        await settings.Bot.SendPhotoAsync(
+            chatId: settings.ChatId!,
             caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
             parseMode: ParseMode.Html,
             photo: img.File!,
             replyMarkup: new InlineKeyboardMarkup(
                 InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}")),
-            cancellationToken: cts,
+            cancellationToken: settings.CancellationToken,
             disableNotification: true
         );
     }
 
-    private static async Task FindAsync(ITelegramBotClient bot, CancellationToken cts, string data, long chatId)
+    private static async Task FindAsync(Settings settings)
     {
-        if (DateTime.TryParse(data.Replace(".", "-"), out var date))
+        if (DateTime.TryParse(settings.Query!.Replace(".", "-"), out var date))
         {
-            var img = _service.GetRandomImage(date);
-            await SendPhotoAsync(bot, cts, chatId, img);
+            settings.Image = _service.GetRandomImage(date);
+            await SendPhotoAsync(settings);
             return;
         }
 
-        await SendPhotoAsync(bot, cts, chatId, _service.GetImage(data.Split(" ")[1]));
+        settings.Image = _service.GetImage(settings.Query);
+
+        await SendPhotoAsync(settings);
     }
 
 
@@ -223,4 +240,15 @@ class Program
 
         return Task.CompletedTask;
     }
+}
+
+class Settings
+{
+    public ITelegramBotClient Bot { get; init; }
+    public Update? Update { get; init; }
+    public long ChatId { get; set; }
+    public CancellationToken CancellationToken { get; init; }
+    public Image? Image { get; set; }
+    public string? Cmd { get; set; }
+    public string? Query { get; set; }
 }
