@@ -81,6 +81,7 @@ class Program
             {
                 case "/start":
                     await StartAsync(bot, cts, msg, chatId);
+                    await HelpAsync(bot, cts, chatId);
                     return;
                 case "/help":
                     await HelpAsync(bot, cts, chatId);
@@ -154,7 +155,6 @@ class Program
             chatId: chatId,
             replyMarkup: defaultReplyKeyboardMarkup,
             cancellationToken: cts);
-        await SendPhotoAsync(bot, cts, chatId, _service.GetRandomImage());
     }
 
     private static async Task NoAccessAsync(ITelegramBotClient bot, CancellationToken cts, long chatId)
@@ -173,9 +173,9 @@ class Program
         await bot.SendTextMessageAsync(
             chatId: chatId,
             text: "Доступные команды:\n" +
-                  "/find <дата, имя> - найти фото по названию.\n" + 
-                  "/changedir <имя> - сменить папку.\n" + 
-                  "/help - доступные команды.\n" + 
+                  "/find <дата, имя> - найти фото по названию.\n" +
+                  "/changedir <имя> - сменить папку.\n" +
+                  "/help - доступные команды.\n" +
                   "/start - начало работы бота.\n",
             cancellationToken: cts,
             disableNotification: true
