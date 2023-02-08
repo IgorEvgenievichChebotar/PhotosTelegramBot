@@ -17,7 +17,7 @@ public interface IYandexDiskService
 
 public class YandexDiskService : IYandexDiskService
 {
-    private List<Image> Images;
+    private readonly List<Image> Images;
     private readonly HttpClient _client;
 
     public YandexDiskService()
@@ -32,13 +32,12 @@ public class YandexDiskService : IYandexDiskService
 
     public async Task<MemoryStream> GetThumbnailImage(Image img)
     {
-        var startNew = Stopwatch.StartNew();
-        Console.WriteLine(startNew.ElapsedMilliseconds + "мс - начало");
-
+        var sw = Stopwatch.StartNew();
         var response = await _client.GetAsync(img.Preview, HttpCompletionOption.ResponseHeadersRead);
-
         var content = await response.Content.ReadAsByteArrayAsync();
-        Console.WriteLine(response.IsSuccessStatusCode ? $"Photo {img.Name} downloaded successfully." : "Ошибка");
+        Console.WriteLine(response.IsSuccessStatusCode
+            ? $"Photo {img.Name} downloaded successfully in {sw.ElapsedMilliseconds}"
+            : $"Error downloading {img.Name}");
 
         return new MemoryStream(content);
     }
@@ -46,7 +45,7 @@ public class YandexDiskService : IYandexDiskService
     public Image GetRandomImage()
     {
         var img = Images
-            .Where(i => Secrets.ParentFolder.Contains(i.ParentFolder!.Name!))
+            .Where(i => Secrets.CurrentFolder.Contains(i.ParentFolder!.Name!))
             .OrderBy(i => Guid.NewGuid())
             .First();
         return img;
@@ -69,25 +68,25 @@ public class YandexDiskService : IYandexDiskService
     private Image? FindImageByName(string image)
     {
         return Images
-            .Where(i => Secrets.ParentFolder.Contains(i.ParentFolder!.Name!))
+            .Where(i => Secrets.CurrentFolder.Contains(i.ParentFolder!.Name!))
             .FirstOrDefault(i => i.Name!.ToLower().Contains(image.ToLower()));
     }
 
     public async Task<IEnumerable<ParentFolder>> GetFolders()
     {
-        var response = await _client.GetAsync(Secrets.GetDirsRequest);
+        var response = await _client.GetAsync(Secrets.GetFoldersRequest);
         var jsonString = await response.Content.ReadAsStringAsync();
-        var dirNames = JsonConvert.DeserializeObject<ICollection<ParentFolder>>(jsonString[22..^2])
+        var folders = JsonConvert.DeserializeObject<ICollection<ParentFolder>>(jsonString[22..^2])
             .Where(pf => pf.Type == "dir")
             .ToList();
-        return dirNames;
+        return folders;
     }
 
     public async Task LoadImagesAsync()
     {
-        if (Images.Any(i => Secrets.ParentFolder.Contains(i.ParentFolder!.Name!)))
+        if (Images.Any(i => Secrets.CurrentFolder.Contains(i.ParentFolder!.Name!)))
         {
-            Console.WriteLine($"фотки уже есть в папке {Secrets.ParentFolder}. Всего: {Images.Count}");
+            Console.WriteLine($"Фотки в папке {Secrets.CurrentFolder} уже есть; Всего: {Images.Count}");
             return;
         }
 
@@ -101,7 +100,7 @@ public class YandexDiskService : IYandexDiskService
             .Where(i => i.MimeType!.Contains("image/jpeg"))
             .ToList());
 
-        Console.WriteLine($"фотки загружены из папки {Secrets.ParentFolder}. Всего: {Images.Count}");
+        Console.WriteLine($"фотки загружены из папки {Secrets.CurrentFolder}. Всего: {Images.Count}");
     }
 
     public void OpenImageInBrowser(string name)

@@ -4,7 +4,6 @@ using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
-using File = System.IO.File;
 
 namespace TgBot;
 
@@ -90,7 +89,7 @@ class Program
                 if (msg.Chat.FirstName == "Jel")
                 {
                     var answer = "зачем пишешь моему боту, дорогая?";
-                    Console.WriteLine($"{msg.Chat.FirstName} - {answer}");
+                    Console.WriteLine($"{answer} -> {msg.Chat.FirstName}");
                     return;
                 }
 
@@ -156,10 +155,10 @@ class Program
 
     private static async Task StartAsync(Settings settings)
     {
-        Console.WriteLine($"Бот запущен для {settings.Update!.Message!.Chat.Username}");
+        Console.WriteLine($"Бот запущен для {settings.Update.Message!.Chat.Username}");
         await settings.Bot.SendTextMessageAsync(
             text: "Этот бот умеет присылать фотки с яндекс диска.",
-            chatId: settings.ChatId!,
+            chatId: settings.ChatId,
             replyMarkup: defaultReplyKeyboardMarkup,
             cancellationToken: settings.CancellationToken,
             disableNotification: true);
@@ -168,15 +167,15 @@ class Program
     private static async Task ChangeDirAsync(Settings settings)
     {
         var parentFolder = settings.Query!;
-        if (Secrets.ParentFolder != parentFolder)
+        if (Secrets.CurrentFolder != parentFolder)
         {
-            Secrets.ParentFolder = parentFolder;
+            Secrets.CurrentFolder = parentFolder;
             await _service.LoadImagesAsync();
         }
 
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
-            text: $"Папка изменена на {Secrets.ParentFolder}",
+            text: $"Папка изменена на {Secrets.CurrentFolder}",
             replyMarkup: defaultReplyKeyboardMarkup,
             cancellationToken: settings.CancellationToken,
             disableNotification: true);
@@ -184,10 +183,10 @@ class Program
 
     private static async Task NoAccessAsync(Settings settings)
     {
-        var msg = settings.Update!.Message!;
+        var msg = settings.Update.Message!;
         Console.WriteLine($"{msg.Chat.Username}, {msg.Chat.FirstName} {msg.Chat.LastName} - Нет доступа.");
         await settings.Bot.SendTextMessageAsync(
-            chatId: settings.ChatId!,
+            chatId: settings.ChatId,
             text: "Нет доступа.",
             cancellationToken: settings.CancellationToken,
             disableNotification: true);
@@ -214,7 +213,7 @@ class Program
         {
             var img = settings.Image!;
             await settings.Bot.SendPhotoAsync(
-                chatId: settings.ChatId!,
+                chatId: settings.ChatId,
                 caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
                 parseMode: ParseMode.Html,
                 photo: (await _service.GetThumbnailImage(img))!,
@@ -264,7 +263,7 @@ class Program
 class Settings
 {
     public ITelegramBotClient Bot { get; init; }
-    public Update? Update { get; init; }
+    public Update Update { get; init; }
     public long ChatId { get; set; }
     public CancellationToken CancellationToken { get; init; }
     public Image? Image { get; set; }
