@@ -46,7 +46,7 @@ public class YandexDiskService : IYandexDiskService
     {
         var img = Images
             .Where(i => Secrets.CurrentFolder.Contains(i.ParentFolder!.Name!))
-            .OrderBy(i => Guid.NewGuid())
+            .OrderBy(_ => Guid.NewGuid())
             .First();
         return img;
     }

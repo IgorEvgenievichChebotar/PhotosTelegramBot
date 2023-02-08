@@ -1,4 +1,5 @@
-﻿using Telegram.Bot;
+﻿using System.Globalization;
+using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
@@ -90,7 +91,7 @@ class Program
                 {
                     await bot.SendTextMessageAsync(
                         chatId: 421981741,
-                        text: $"{DateTime.Now} | {msg.Chat.FirstName} написала боту: {msgText}", 
+                        text: $"{DateTime.Now} | {msg.Chat.FirstName} написала боту: {msgText}",
                         cancellationToken: cts);
                     await NoAccessAsync(settings);
                     return;
@@ -181,7 +182,8 @@ class Program
     private static async Task NoAccessAsync(Settings settings)
     {
         var msg = settings.Update.Message!;
-        Console.WriteLine($"{DateTime.Now} | {msg.Chat.Username}, {msg.Chat.FirstName} {msg.Chat.LastName} - Нет доступа.");
+        Console.WriteLine(
+            $"{DateTime.Now} | {msg.Chat.Username}, {msg.Chat.FirstName} {msg.Chat.LastName} - Нет доступа.");
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
             text: "Нет доступа.",
@@ -219,7 +221,13 @@ class Program
                 cancellationToken: settings.CancellationToken,
                 disableNotification: true
             );
-            Console.WriteLine($"{DateTime.Now} | Отправлено фото {img} пользователю {settings.Update!.Message!.Chat.FirstName}");
+
+            var username = (settings.Update.Message is not null
+                ? settings.Update.Message.Chat.Username
+                : settings.Update.CallbackQuery!.From.Username)!;
+
+            Console.WriteLine(
+                $"{DateTime.Now} | Отправлено фото {img} пользователю {username}");
         }
 
         if (settings.Query == null)
@@ -229,7 +237,14 @@ class Program
             return;
         }
 
-        if (DateTime.TryParse(settings.Query.Replace(".", "-"), out var date))
+        var dateString = settings.Query.Split(" ")[0];
+        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+        if (DateTime.TryParseExact(
+                dateString,
+                "dd.MM.yyyy",
+                CultureInfo.CurrentCulture,
+                DateTimeStyles.None,
+                out var date))
         {
             settings.Image = _service.GetRandomImage(date);
             await SendPhotoAsync(settings);
