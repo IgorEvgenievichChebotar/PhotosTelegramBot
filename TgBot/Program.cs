@@ -4,6 +4,7 @@ using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
+using File = System.IO.File;
 
 namespace TgBot;
 
@@ -216,7 +217,7 @@ class Program
                 chatId: settings.ChatId!,
                 caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
                 parseMode: ParseMode.Html,
-                photo: /*(img.Size < 1_000_000 ? img.File! : */(await _service.GetThumbnailImage(img))!,
+                photo: (await _service.GetThumbnailImage(img))!,
                 replyMarkup: new InlineKeyboardMarkup(
                     InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}")),
                 cancellationToken: settings.CancellationToken,
