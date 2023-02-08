@@ -36,8 +36,8 @@ public class YandexDiskService : IYandexDiskService
         var response = await _client.GetAsync(img.Preview, HttpCompletionOption.ResponseHeadersRead);
         var content = await response.Content.ReadAsByteArrayAsync();
         Console.WriteLine(response.IsSuccessStatusCode
-            ? $"Photo {img.Name} downloaded successfully in {sw.ElapsedMilliseconds}"
-            : $"Error downloading {img.Name}");
+            ? $"{DateTime.Now} | Photo {img.Name} downloaded successfully in {sw.ElapsedMilliseconds}ms"
+            : $"{DateTime.Now} | Error downloading {img.Name}");
 
         return new MemoryStream(content);
     }
@@ -86,7 +86,7 @@ public class YandexDiskService : IYandexDiskService
     {
         if (Images.Any(i => Secrets.CurrentFolder.Contains(i.ParentFolder!.Name!)))
         {
-            Console.WriteLine($"Фотки в папке {Secrets.CurrentFolder} уже есть; Всего: {Images.Count}");
+            Console.WriteLine($"{DateTime.Now} | Фотки в папке {Secrets.CurrentFolder} уже есть; Всего: {Images.Count}");
             return;
         }
 
@@ -100,7 +100,7 @@ public class YandexDiskService : IYandexDiskService
             .Where(i => i.MimeType!.Contains("image/jpeg"))
             .ToList());
 
-        Console.WriteLine($"фотки загружены из папки {Secrets.CurrentFolder}. Всего: {Images.Count}");
+        Console.WriteLine($"{DateTime.Now} | фотки загружены из папки {Secrets.CurrentFolder}. Всего: {Images.Count}");
     }
 
     public void OpenImageInBrowser(string name)

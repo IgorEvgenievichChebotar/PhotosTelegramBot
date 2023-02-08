@@ -86,15 +86,12 @@ class Program
                     settings.Query = msgText[(msgText.IndexOf(" ", StringComparison.Ordinal) + 1)..];
                 }
 
-                if (msg.Chat.FirstName == "Jel")
-                {
-                    var answer = "зачем пишешь моему боту, дорогая?";
-                    Console.WriteLine($"{answer} -> {msg.Chat.FirstName}");
-                    return;
-                }
-
                 if (msg.Chat.Username != $"{Secrets.MyUsername}")
                 {
+                    await bot.SendTextMessageAsync(
+                        chatId: 421981741,
+                        text: $"{DateTime.Now} | {msg.Chat.FirstName} написала боту: {msgText}", 
+                        cancellationToken: cts);
                     await NoAccessAsync(settings);
                     return;
                 }
@@ -155,7 +152,7 @@ class Program
 
     private static async Task StartAsync(Settings settings)
     {
-        Console.WriteLine($"Бот запущен для {settings.Update.Message!.Chat.Username}");
+        Console.WriteLine($"{DateTime.Now} | Бот запущен для {settings.Update.Message!.Chat.Username}");
         await settings.Bot.SendTextMessageAsync(
             text: "Этот бот умеет присылать фотки с яндекс диска.",
             chatId: settings.ChatId,
@@ -184,7 +181,7 @@ class Program
     private static async Task NoAccessAsync(Settings settings)
     {
         var msg = settings.Update.Message!;
-        Console.WriteLine($"{msg.Chat.Username}, {msg.Chat.FirstName} {msg.Chat.LastName} - Нет доступа.");
+        Console.WriteLine($"{DateTime.Now} | {msg.Chat.Username}, {msg.Chat.FirstName} {msg.Chat.LastName} - Нет доступа.");
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
             text: "Нет доступа.",
@@ -222,7 +219,7 @@ class Program
                 cancellationToken: settings.CancellationToken,
                 disableNotification: true
             );
-            Console.WriteLine($"Отправлено фото {img} пользователю {settings.Update!.Message!.Chat.FirstName}");
+            Console.WriteLine($"{DateTime.Now} | Отправлено фото {img} пользователю {settings.Update!.Message!.Chat.FirstName}");
         }
 
         if (settings.Query == null)
