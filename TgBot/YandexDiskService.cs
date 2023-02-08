@@ -10,7 +10,7 @@ public interface IYandexDiskService
     Image GetImage(string image);
     void OpenImageInBrowser(string name);
     ICollection<Image> GetImagesByDate(DateTime date);
-    Task<IEnumerable<Dir>> GetDirs();
+    Task<IEnumerable<ParentFolder>> GetFolders();
     Task LoadImagesAsync();
 }
 
@@ -31,7 +31,10 @@ public class YandexDiskService : IYandexDiskService
 
     public Image GetRandomImage()
     {
-        var img = Images[new Random().Next(Images.Count)];
+        var img = Images
+            .Where(i => Secrets.ParentFolder.Contains(i.ParentFolder!.Name!))
+            .OrderBy(i => Guid.NewGuid())
+            .First();
         return img;
     }
 
@@ -51,31 +54,40 @@ public class YandexDiskService : IYandexDiskService
 
     private Image? FindImageByName(string image)
     {
-        return Images.FirstOrDefault(i => i.Name!.ToLower().Contains(image.ToLower()));
+        return Images
+            .Where(i => Secrets.ParentFolder.Contains(i.ParentFolder!.Name!))
+            .FirstOrDefault(i => i.Name!.ToLower().Contains(image.ToLower()));
     }
 
-    public async Task<IEnumerable<Dir>> GetDirs()
+    public async Task<IEnumerable<ParentFolder>> GetFolders()
     {
         var response = await _client.GetAsync(Secrets.GetDirsRequest);
         var jsonString = await response.Content.ReadAsStringAsync();
-        var dirNames = JsonConvert.DeserializeObject<ICollection<Dir>>(jsonString[22..^2])
-            .Where(d => d.Type == "dir")
+        var dirNames = JsonConvert.DeserializeObject<ICollection<ParentFolder>>(jsonString[22..^2])
+            .Where(pf => pf.Type == "dir")
             .ToList();
         return dirNames;
     }
 
     public async Task LoadImagesAsync()
     {
+        if (Images.Any(i => Secrets.ParentFolder.Contains(i.ParentFolder!.Name!)))
+        {
+            Console.WriteLine($"фотки уже есть в папке {Secrets.ParentFolder}. Всего: {Images.Count}");
+            return;
+        }
+
         var response = await _client.GetAsync($"{Secrets.GetAllImagesRequest}");
 
         var jsonString = await response.Content.ReadAsStringAsync();
 
-        Images = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2], new ImageExifConverter())
+        Images.AddRange(JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2],
+                new ImageExifConverter())
             .Where(i => i.Name!.Contains(".jpg"))
             .Where(i => i.MimeType!.Contains("image/jpeg"))
-            .ToList();
+            .ToList());
 
-        Console.WriteLine(Images.Count + $" фоток загружено из папки {Secrets.PathToDir}.");
+        Console.WriteLine($"фотки загружены из папки {Secrets.ParentFolder}. Всего: {Images.Count}");
     }
 
     public void OpenImageInBrowser(string name)

@@ -18,7 +18,8 @@ public class ImageExifConverter : JsonConverter<Image>
             Name = (string)jo["name"],
             File = (string)jo["file"],
             MimeType = (string)jo["mime_type"],
-            Size = (long)jo["size"]
+            Size = (long)jo["size"],
+            ParentFolder = new ParentFolder((string)jo["path"])
         };
         try
         {

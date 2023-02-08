@@ -9,8 +9,6 @@ using Telegram.Bot.Types.ReplyMarkups;
 using Size = SixLabors.ImageSharp.Size;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Processing;
-using System.IO;
-using System.Net.Http;
 using SixLabors.ImageSharp.Formats.Jpeg;
 
 namespace TgBot;
@@ -78,95 +76,87 @@ class Program
             Update = update,
         };
 
-        if (update.Message is { Text: { } } msg)
+        switch (update.Type)
         {
-            var msgText = msg.Text;
-            var chatId = msg.Chat.Id;
+            case UpdateType.Message:
+                if (update.Message is not { Text: { } } msg) return;
 
-            settings.ChatId = chatId;
-            settings.Cmd = msgText.Split(" ")[0];
-            if (msgText.Split(" ").Length > 1)
-            {
-                settings.Query = msgText.Split(" ")[1];
-            }
+                var msgText = msg.Text;
+                var chatId = msg.Chat.Id;
 
-            if (msg.Chat.Username != $"{Secrets.MyUsername}")
-            {
-                await NoAccessAsync(settings);
+                settings.ChatId = chatId;
+                settings.Cmd = msgText.Split(" ")[0];
+
+                if (msgText.Split(" ").Length > 1)
+                {
+                    settings.Query = msgText[(msgText.IndexOf(" ", StringComparison.Ordinal) + 1)..];
+                }
+
+                if (msg.Chat.FirstName == "Jel")
+                {
+                    var answer = "зачем пишешь моему боту. дорогая?";
+                    Console.WriteLine($"{msg.Chat.FirstName} - {answer}");
+                    return;
+                }
+
+                if (msg.Chat.Username != $"{Secrets.MyUsername}")
+                {
+                    await NoAccessAsync(settings);
+                    return;
+                }
+
+                switch (settings.Cmd.ToLower())
+                {
+                    case "/start":
+                        await StartAsync(settings);
+                        await HelpAsync(settings);
+                        return;
+                    case "/help":
+                        await HelpAsync(settings);
+                        return;
+                    case "/find":
+                        await FindAsync(settings);
+                        return;
+                    case "/changedir":
+                        await ChangeDirAsync(settings);
+                        return;
+                    case "сменить":
+                        var folders = await _service.GetFolders();
+                        await bot.SendTextMessageAsync(
+                            chatId: chatId,
+                            text: "Выбери из списка",
+                            replyMarkup: new InlineKeyboardMarkup(
+                                folders.Select(f => new[]
+                                    { InlineKeyboardButton.WithCallbackData(f.Name!, $"/changedir {f.Name}") })
+                            ),
+                            cancellationToken: cts);
+                        return;
+                    default:
+                        await FindAsync(settings);
+                        return;
+                }
+
+            case UpdateType.CallbackQuery:
+                var data = update.CallbackQuery!.Data;
+                settings.Cmd = data!.Split(" ")[0];
+                settings.ChatId = update.CallbackQuery!.From.Id;
+                if (data.Split(" ").Length > 1)
+                {
+                    settings.Query = data[(data.IndexOf(" ", StringComparison.Ordinal) + 1)..];
+                }
+
+                switch (settings.Cmd)
+                {
+                    case "/find":
+                        await FindAsync(settings);
+                        return;
+                    case "/changedir":
+                        await ChangeDirAsync(settings);
+                        break;
+                }
+
                 return;
-            }
-
-            switch (settings.Cmd)
-            {
-                case "/start":
-                    await StartAsync(settings);
-                    await HelpAsync(settings);
-                    return;
-                case "/help":
-                    await HelpAsync(settings);
-                    return;
-                case "/find":
-                    await FindAsync(settings);
-                    return;
-                case "/changedir":
-                    await ChangeDirAsync(settings);
-                    return;
-                default:
-                    settings.Image = _service.GetRandomImage();
-                    break;
-            }
-
-            if (msgText.ToLower().Contains("сменить папку"))
-            {
-                var dirs = await _service.GetDirs();
-
-                await bot.SendTextMessageAsync(
-                    chatId: chatId,
-                    text: "Выбери из списка",
-                    replyMarkup: new InlineKeyboardMarkup(
-                        dirs.Select(d => new[]
-                            { InlineKeyboardButton.WithCallbackData(d.Name!, $"/change {d.Name}") })
-                    ),
-                    cancellationToken: cts);
-            }
-            else
-            {
-                await SendPhotoAsync(settings);
-            }
         }
-        else if (update.Type == UpdateType.CallbackQuery)
-        {
-            settings.Cmd = update.CallbackQuery!.Data!.Split(" ")[0];
-            settings.Query = update.CallbackQuery!.Data!.Split(" ")[1];
-            settings.ChatId = update.CallbackQuery!.From.Id;
-
-            switch (settings.Cmd)
-            {
-                case "/find":
-                    await FindAsync(settings);
-                    return;
-                case "/change":
-                    await ChangeDirAsync(settings);
-                    break;
-            }
-        }
-    }
-
-    private static async Task ChangeDirAsync(Settings settings)
-    {
-        var date = settings.Query!.Replace("_", " ");
-        if (Secrets.PathToDir != date)
-        {
-            Secrets.PathToDir = date;
-            await _service.LoadImagesAsync();
-        }
-
-        await settings.Bot.SendTextMessageAsync(
-            chatId: settings.ChatId,
-            text: $"Папка изменена на {Secrets.PathToDir}",
-            replyMarkup: defaultReplyKeyboardMarkup,
-            cancellationToken: settings.CancellationToken,
-            disableNotification: true);
     }
 
     private static async Task StartAsync(Settings settings)
@@ -180,9 +170,27 @@ class Program
             disableNotification: true);
     }
 
+    private static async Task ChangeDirAsync(Settings settings)
+    {
+        var parentFolder = settings.Query!;
+        if (Secrets.ParentFolder != parentFolder)
+        {
+            Secrets.ParentFolder = parentFolder;
+            await _service.LoadImagesAsync();
+        }
+
+        await settings.Bot.SendTextMessageAsync(
+            chatId: settings.ChatId,
+            text: $"Папка изменена на {Secrets.ParentFolder}",
+            replyMarkup: defaultReplyKeyboardMarkup,
+            cancellationToken: settings.CancellationToken,
+            disableNotification: true);
+    }
+
     private static async Task NoAccessAsync(Settings settings)
     {
-        Console.WriteLine("Нет доступа.");
+        var msg = settings.Update!.Message!;
+        Console.WriteLine($"{msg.Chat.Username}, {msg.Chat.FirstName} {msg.Chat.LastName} - Нет доступа.");
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId!,
             text: "Нет доступа.",
@@ -200,22 +208,6 @@ class Program
                   "/changedir <имя> - сменить папку.\n" +
                   "/help - доступные команды.\n" +
                   "/start - начало работы бота.\n",
-            cancellationToken: settings.CancellationToken,
-            disableNotification: true
-        );
-    }
-
-    private static async Task SendPhotoAsync(Settings settings)
-    {
-        Console.WriteLine("Отправлено фото");
-        var img = settings.Image!;
-        await settings.Bot.SendPhotoAsync(
-            chatId: settings.ChatId!,
-            caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
-            parseMode: ParseMode.Html,
-            photo: (img.Size < 1_000_000 ? img.File! : await GetThumbnailImage(img))!,
-            replyMarkup: new InlineKeyboardMarkup(
-                InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}")),
             cancellationToken: settings.CancellationToken,
             disableNotification: true
         );
@@ -264,7 +256,30 @@ class Program
 
     private static async Task FindAsync(Settings settings)
     {
-        if (DateTime.TryParse(settings.Query!.Replace(".", "-"), out var date))
+        static async Task SendPhotoAsync(Settings settings)
+        {
+            var img = settings.Image!;
+            await settings.Bot.SendPhotoAsync(
+                chatId: settings.ChatId!,
+                caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
+                parseMode: ParseMode.Html,
+                photo: (img.Size < 1_000_000 ? img.File! : await GetThumbnailImage(img))!,
+                replyMarkup: new InlineKeyboardMarkup(
+                    InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}")),
+                cancellationToken: settings.CancellationToken,
+                disableNotification: true
+            );
+            Console.WriteLine($"Отправлено фото {img} пользователю {settings.Update!.Message!.Chat.FirstName}");
+        }
+        
+        if (settings.Query == null)
+        {
+            settings.Image = _service.GetRandomImage();
+            await SendPhotoAsync(settings);
+            return;
+        }
+
+        if (DateTime.TryParse(settings.Query.Replace(".", "-"), out var date))
         {
             settings.Image = _service.GetRandomImage(date);
             await SendPhotoAsync(settings);
