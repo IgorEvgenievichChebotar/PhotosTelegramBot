@@ -8,6 +8,7 @@ public class Image
     public long? Size { get; set; }
     public DateTime DateTime { get; set; }
     public ParentFolder? ParentFolder { get; set; }
+    public string? Preview { get; set; }
 
     public override string ToString()
     {

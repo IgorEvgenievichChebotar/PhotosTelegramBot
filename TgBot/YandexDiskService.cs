@@ -12,6 +12,7 @@ public interface IYandexDiskService
     ICollection<Image> GetImagesByDate(DateTime date);
     Task<IEnumerable<ParentFolder>> GetFolders();
     Task LoadImagesAsync();
+    Task<FileStream> GetThumbnailImage(Image img);
 }
 
 public class YandexDiskService : IYandexDiskService
@@ -27,6 +28,26 @@ public class YandexDiskService : IYandexDiskService
             "Authorization",
             $"OAuth {Secrets.OAuthYandexDisk}"
         );
+    }
+
+    public async Task<FileStream> GetThumbnailImage(Image img)
+    {
+        var startNew = Stopwatch.StartNew();
+        Console.WriteLine(startNew.ElapsedMilliseconds + "мс - начало");
+
+        var response = await _client.GetAsync(img.Preview, HttpCompletionOption.ResponseHeadersRead);
+
+        var content = await response.Content.ReadAsByteArrayAsync();
+        Console.WriteLine(response.IsSuccessStatusCode ? $"Photo {img.Name} downloaded successfully." : "Ошибка");
+
+        using var memoryStream = new MemoryStream(content);
+        var fileStream = new FileStream(img.Name!, FileMode.Create, FileAccess.Write);
+        memoryStream.WriteTo(fileStream);
+        await fileStream.DisposeAsync();
+        
+        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс на получение фотки {img.Name}");
+
+        return new FileStream(img.Name!, FileMode.Open, FileAccess.Read);
     }
 
     public Image GetRandomImage()

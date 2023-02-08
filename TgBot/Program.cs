@@ -1,15 +1,9 @@
-﻿using System.Diagnostics;
-using SixLabors.ImageSharp.Processing.Processors.Transforms;
-using Telegram.Bot;
+﻿using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
-using Size = SixLabors.ImageSharp.Size;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Processing;
-using SixLabors.ImageSharp.Formats.Jpeg;
 
 namespace TgBot;
 
@@ -94,7 +88,7 @@ class Program
 
                 if (msg.Chat.FirstName == "Jel")
                 {
-                    var answer = "зачем пишешь моему боту. дорогая?";
+                    var answer = "зачем пишешь моему боту, дорогая?";
                     Console.WriteLine($"{msg.Chat.FirstName} - {answer}");
                     return;
                 }
@@ -213,47 +207,6 @@ class Program
         );
     }
 
-    private static async Task<FileStream> GetThumbnailImage(Image img)
-    {
-        var startNew = Stopwatch.StartNew();
-        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс - начало");
-
-        using var client = new HttpClient();
-
-        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс new HttpClient()");
-
-        var response = await client.GetAsync(img.File);
-
-        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс на GetAsync");
-
-        var imageStream = await response.Content.ReadAsStreamAsync();
-
-        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс на запрос");
-
-        using var image = SixLabors.ImageSharp.Image.Load(imageStream, out _);
-
-        image.Mutate(x => x.Resize(new ResizeOptions
-        {
-            Size = new Size(3000, 2000),
-            Mode = ResizeMode.Max,
-            Sampler = new BicubicResampler()
-        }));
-
-        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс на mutate");
-
-        var filePath = Path.GetTempFileName();
-
-        await image.SaveAsJpegAsync(filePath, new JpegEncoder { Quality = 50, ColorType = JpegColorType.Rgb });
-
-        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс на save");
-
-        var thumbnailImage = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-
-        Console.WriteLine(startNew.ElapsedMilliseconds + $"мс на сжатие фотки {img.Name}");
-
-        return thumbnailImage;
-    }
-
     private static async Task FindAsync(Settings settings)
     {
         static async Task SendPhotoAsync(Settings settings)
@@ -263,7 +216,7 @@ class Program
                 chatId: settings.ChatId!,
                 caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
                 parseMode: ParseMode.Html,
-                photo: (img.Size < 1_000_000 ? img.File! : await GetThumbnailImage(img))!,
+                photo: /*(img.Size < 1_000_000 ? img.File! : */(await _service.GetThumbnailImage(img))!,
                 replyMarkup: new InlineKeyboardMarkup(
                     InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}")),
                 cancellationToken: settings.CancellationToken,
@@ -271,7 +224,7 @@ class Program
             );
             Console.WriteLine($"Отправлено фото {img} пользователю {settings.Update!.Message!.Chat.FirstName}");
         }
-        
+
         if (settings.Query == null)
         {
             settings.Image = _service.GetRandomImage();
