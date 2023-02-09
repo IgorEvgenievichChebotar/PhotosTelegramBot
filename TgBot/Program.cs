@@ -1,10 +1,14 @@
-﻿using System.Globalization;
+﻿using System.Diagnostics;
+using System.Globalization;
+using System.IO.Compression;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using Telegram.Bot.Types.InputFiles;
 using Telegram.Bot.Types.ReplyMarkups;
+using File = System.IO.File;
 
 namespace TgBot;
 
@@ -15,11 +19,14 @@ class Program
     private static readonly ReplyKeyboardMarkup defaultReplyKeyboardMarkup = new(new[]
     {
         new KeyboardButton("Ещё"),
-        new KeyboardButton("Сменить папку")
+        new KeyboardButton("Сменить папку"),
+        new KeyboardButton("Избранные")
     }) { ResizeKeyboard = true };
 
     public static async Task Main(string[] args)
     {
+        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
         var bot = new TelegramBotClient($"{Secrets.TelegramBotToken}");
 
         using CancellationTokenSource cts = new();
@@ -109,11 +116,8 @@ class Program
                     case "/find":
                         await FindAsync(settings);
                         return;
-                    case "/changedir":
-                        await ChangeDirAsync(settings);
-                        return;
                     case "сменить":
-                        var folders = await _service.GetFolders();
+                        var folders = await _service.GetFoldersAsync();
                         await bot.SendTextMessageAsync(
                             chatId: chatId,
                             text: "Выбери из списка",
@@ -123,6 +127,13 @@ class Program
                             ),
                             cancellationToken: cts);
                         return;
+                    case "/like":
+                        settings.Image = _service.GetImage(settings.Query!);
+                        await LikeAsync(settings);
+                        return;
+                    case "/likes" or "избранные" or "🖤":
+                        await GetLikesAsync(settings);
+                        return;
                     default:
                         await FindAsync(settings);
                         return;
@@ -130,7 +141,8 @@ class Program
 
             case UpdateType.CallbackQuery:
                 var data = update.CallbackQuery!.Data;
-                settings.Cmd = data!.Split(" ")[0];
+                settings.Query = data!.Split(" ")[1];
+                settings.Cmd = data.Split(" ")[0];
                 settings.ChatId = update.CallbackQuery!.From.Id;
                 if (data.Split(" ").Length > 1)
                 {
@@ -142,24 +154,117 @@ class Program
                     case "/find":
                         await FindAsync(settings);
                         return;
+                    case "/like":
+                        settings.Image = _service.GetImage(settings.Query!);
+                        await LikeAsync(settings);
+                        return;
                     case "/changedir":
                         await ChangeDirAsync(settings);
-                        break;
+                        return;
+                    case "/loadlikes":
+                        await DownloadArchiveOfOriginalsAsync(settings);
+                        return;
                 }
 
                 return;
         }
     }
 
+    private static async Task GetLikesAsync(Settings settings)
+    {
+        var likes = _service.GetLikes(settings.ChatId);
+        if (!likes.Any())
+        {
+            await settings.Bot.SendTextMessageAsync(
+                chatId: settings.ChatId,
+                text: "Список избранных пуст",
+                cancellationToken: settings.CancellationToken);
+            return;
+        }
+
+        var thumbnails = await _service.GetThumbnailImagesAsync(likes);
+        await settings.Bot.SendMediaGroupAsync(
+            chatId: settings.ChatId,
+            media: thumbnails
+                .Take(10) //todo
+                .Zip(likes, (ms, i) => new InputMediaPhoto(new InputMedia(ms, i.Name))),
+            cancellationToken: settings.CancellationToken
+        );
+
+        await settings.Bot.SendTextMessageAsync(
+            chatId: settings.ChatId,
+            text: "Скачать оригиналы архивом?",
+            replyMarkup: new InlineKeyboardMarkup(
+                InlineKeyboardButton.WithCallbackData("Скачать", $"/loadlikes {settings.ChatId}")),
+            cancellationToken: settings.CancellationToken);
+    }
+
+    private static async Task DownloadArchiveOfOriginalsAsync(Settings settings)
+    {
+        var likes = _service.GetLikes(settings.ChatId);
+
+        static async Task<MemoryStream> CompressImagesToZip(ICollection<Image> images)
+        {
+            var sw = Stopwatch.StartNew();
+            var imageStreams = await _service.GetOriginalImagesAsync(images);
+            using var archiveStream = new MemoryStream();
+            using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, true);
+
+            var index = 0;
+            foreach (var imageStream in imageStreams)
+            {
+                var entry = archive.CreateEntry($"image{index}.jpg");
+                await using (var entryStream = entry.Open())
+                {
+                    await imageStream.CopyToAsync(entryStream);
+                }
+
+                index++;
+            }
+
+            Console.WriteLine(sw.ElapsedMilliseconds + $"ms на архивацию {images.Count} оригиналов");
+            return archiveStream;
+        }
+
+        var zipArchive = await CompressImagesToZip(likes);
+
+        await settings.Bot.SendDocumentAsync(
+            chatId: settings.ChatId,
+            document: new InputOnlineFile(new MemoryStream(zipArchive.ToArray()), "originals.zip"),
+            caption: "Архив фоток в оригинальном качестве",
+            parseMode: ParseMode.Html,
+            replyMarkup: defaultReplyKeyboardMarkup,
+            cancellationToken: settings.CancellationToken);
+    }
+
     private static async Task StartAsync(Settings settings)
     {
         Console.WriteLine($"{DateTime.Now} | Бот запущен для {settings.Update.Message!.Chat.Username}");
         await settings.Bot.SendTextMessageAsync(
-            text: "Этот бот умеет присылать фотки с яндекс диска.",
+            text: "Этот бот умеет присылать фотки с яндекс диска, " +
+                  "искать по названию/дате, " +
+                  "добавлять в избранное и скачивать оригиналы архивом",
             chatId: settings.ChatId,
             replyMarkup: defaultReplyKeyboardMarkup,
             cancellationToken: settings.CancellationToken,
             disableNotification: true);
+    }
+
+    private static async Task LikeAsync(Settings settings)
+    {
+        if (!_service.AddToLikes(settings.ChatId, settings.Image!))
+        {
+            await settings.Bot.SendTextMessageAsync(
+                chatId: settings.ChatId,
+                text: $"{settings.Image!.Name} уже в избранном",
+                cancellationToken: settings.CancellationToken);
+            return;
+        }
+
+        await settings.Bot.SendTextMessageAsync(
+            chatId: settings.ChatId,
+            text: $"{settings.Image!.Name} добавлено в избранное",
+            cancellationToken: settings.CancellationToken);
     }
 
     private static async Task ChangeDirAsync(Settings settings)
@@ -183,22 +288,24 @@ class Program
     {
         var msg = settings.Update.Message!;
         Console.WriteLine(
-            $"{DateTime.Now} | {msg.Chat.Username}, {msg.Chat.FirstName} {msg.Chat.LastName} - Нет доступа.");
+            $"{DateTime.Now} | {msg.Chat.Username}, {msg.Chat.FirstName} {msg.Chat.LastName} - Нет доступа");
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
-            text: "Нет доступа.",
+            text: "Нет доступа",
             cancellationToken: settings.CancellationToken,
             disableNotification: true);
     }
 
     private static async Task HelpAsync(Settings settings)
     {
-        Console.WriteLine("Отправлен список помощи");
+        Console.WriteLine($"{DateTime.Now} | Отправлен список помощи");
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
             text: "Доступные команды:\n" +
                   "/find <дата, имя> - найти фото по названию.\n" +
                   "/changedir <имя> - сменить папку.\n" +
+                  "/like <имя> - добавить фотку в избранные.\n" +
+                  "/likes - избранные фотки.\n" +
                   "/help - доступные команды.\n" +
                   "/start - начало работы бота.\n",
             cancellationToken: settings.CancellationToken,
@@ -215,11 +322,16 @@ class Program
                 chatId: settings.ChatId,
                 caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
                 parseMode: ParseMode.Html,
-                photo: (await _service.GetThumbnailImage(img))!,
-                replyMarkup: new InlineKeyboardMarkup(
-                    InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}")),
-                cancellationToken: settings.CancellationToken,
-                disableNotification: true
+                photo: (await _service.GetThumbnailImageAsync(img))!,
+                replyMarkup: new InlineKeyboardMarkup(new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}"),
+                    InlineKeyboardButton.WithCallbackData("🖤", $"/like {img.Name}"),
+                }),
+                cancellationToken:
+                settings.CancellationToken,
+                disableNotification:
+                true
             );
 
             var username = (settings.Update.Message is not null
@@ -238,11 +350,10 @@ class Program
         }
 
         var dateString = settings.Query.Split(" ")[0];
-        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("de-DE");
         if (DateTime.TryParseExact(
                 dateString,
                 "dd.MM.yyyy",
-                CultureInfo.CurrentCulture,
+                CultureInfo.GetCultureInfo("de-DE"),
                 DateTimeStyles.None,
                 out var date))
         {

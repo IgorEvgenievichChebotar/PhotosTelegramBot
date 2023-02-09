@@ -1,13 +1,22 @@
-﻿namespace TgBot;
+﻿using System.Text.Json;
+using Newtonsoft.Json;
 
-public class ParentFolder
+namespace TgBot;
+
+public class Folder
 {
     public string? Name { get; set; }
 
     public string? Type { get; set; }
+    public string? Path { get; set; }
 
-    public ParentFolder(string? path)
+    public Folder()
     {
+    }
+
+    public Folder(string? path)
+    {
+        Path = path;
         if (path != null)
         {
             Name = path[..path.LastIndexOf('/')].Split('/').Last();

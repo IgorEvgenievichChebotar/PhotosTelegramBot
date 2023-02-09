@@ -13,6 +13,10 @@ public class ImageExifConverter : JsonConverter<Image>
         JsonSerializer serializer)
     {
         var jo = JObject.Load(reader);
+        if ((string)jo["type"] == "dir")
+        {
+            return null;
+        }
         var img = new Image();
         try
         {
@@ -22,7 +26,8 @@ public class ImageExifConverter : JsonConverter<Image>
                 File = (string)jo["file"],
                 MimeType = (string)jo["mime_type"],
                 Size = (long)jo["size"],
-                ParentFolder = new ParentFolder((string)jo["path"]),
+                Path = (string)jo["path"],
+                ParentFolder = new Folder((string)jo["path"]),
                 Preview = (string)jo["preview"]
             };
             try
@@ -34,10 +39,11 @@ public class ImageExifConverter : JsonConverter<Image>
                 img.DateTime = DateTime.Now;
             }
         }
-        catch (Exception e)
+        catch (Exception)
         {
             Console.WriteLine($"Ошибка преобразования файла {(string)jo["name"]}");
         }
+
         return img;
     }
 
