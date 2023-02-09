@@ -1,5 +1,9 @@
 ﻿using System.Diagnostics;
+using System.Net;
+using System.Text.Json;
 using Newtonsoft.Json;
+using Flurl.Http;
+using Flurl.Http.Configuration;
 
 namespace TgBot;
 
@@ -16,31 +20,38 @@ public interface IYandexDiskService
     Task<MemoryStream> GetOriginalImageAsync(Image img);
     Task<IList<MemoryStream>> GetThumbnailImagesAsync(IEnumerable<Image> images);
     Task<IList<MemoryStream>> GetOriginalImagesAsync(IEnumerable<Image> images);
-    IList<Image> GetLikes(long chatId);
-    bool AddToLikes(long chatId, Image img);
+    Task<IList<Image>> GetLikesAsync(long chatId);
+    Task<string> GetUrlToLikedImages(long chatId);
+    Task<string> CreatePublicFolderByChatId(long chatId);
+    Task MoveLikedImagesToPublicFolder(long chatId);
+    Task AddToLikesAsync(long chatId, Image img);
 }
 
 public class YandexDiskService : IYandexDiskService
 {
     private readonly List<Image> Images;
     private readonly Dictionary<long, List<Image>> Likes;
-    private readonly HttpClient _client;
+    private readonly HttpClient _httpClient;
 
     public YandexDiskService()
     {
         Likes = new Dictionary<long, List<Image>>(); //todo from memory
         Images = new List<Image>();
-        _client = new HttpClient();
-        _client.DefaultRequestHeaders.Add(
+        _httpClient = new HttpClient();
+        _httpClient.DefaultRequestHeaders.Add(
             "Authorization",
             $"OAuth {Secrets.OAuthYandexDisk}"
+        );
+        FlurlHttp.Configure(settings =>
+            settings.BeforeCall = call =>
+                call.Request.WithHeader("Authorization", $"OAuth {Secrets.OAuthYandexDisk}")
         );
     }
 
     public async Task<MemoryStream> GetThumbnailImageAsync(Image img)
     {
         var sw = Stopwatch.StartNew();
-        var response = await _client.GetAsync(img.Preview, HttpCompletionOption.ResponseHeadersRead);
+        var response = await _httpClient.GetAsync(img.Preview, HttpCompletionOption.ResponseHeadersRead);
         var content = await response.Content.ReadAsByteArrayAsync();
         Console.WriteLine(response.IsSuccessStatusCode
             ? $"{DateTime.Now} | Photo {img.Name} downloaded successfully in {sw.ElapsedMilliseconds}ms"
@@ -52,7 +63,7 @@ public class YandexDiskService : IYandexDiskService
     public async Task<MemoryStream> GetOriginalImageAsync(Image img)
     {
         var sw = Stopwatch.StartNew();
-        var response = await _client.GetAsync(img.File, HttpCompletionOption.ResponseHeadersRead);
+        var response = await _httpClient.GetAsync(img.File, HttpCompletionOption.ResponseHeadersRead);
         var content = await response.Content.ReadAsByteArrayAsync();
         Console.WriteLine(response.IsSuccessStatusCode
             ? $"{DateTime.Now} | Photo {img.Name} downloaded successfully in {sw.ElapsedMilliseconds}ms"
@@ -64,7 +75,9 @@ public class YandexDiskService : IYandexDiskService
     public async Task<IList<MemoryStream>> GetThumbnailImagesAsync(IEnumerable<Image> images)
     {
         var streams = new List<MemoryStream>();
-        await Parallel.ForEachAsync(images, async (i, _) => { streams.Add(await GetThumbnailImageAsync(i)); });
+        await Parallel.ForEachAsync(
+            images, 
+            async (i, _) => { streams.Add(await GetThumbnailImageAsync(i)); });
         return streams;
     }
 
@@ -75,26 +88,97 @@ public class YandexDiskService : IYandexDiskService
         return streams;
     }
 
-    public IList<Image> GetLikes(long chatId)
+    public async Task<IList<Image>> GetLikesAsync(long chatId)
     {
-        return Likes.ContainsKey(chatId) ? Likes[chatId] : new List<Image>();
+        await CreatePublicFolderByChatId(chatId);
+        var urlFolderOnDisk = Secrets.GetUrlLikedImagesByChatIdOnDisk(chatId);
+        var response = await _httpClient.GetAsync(urlFolderOnDisk);
+        var jsonString = await response.Content.ReadAsStringAsync();
+        var likes = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2],
+                new ImageExifConverter())
+            .Where(i => i.Name.Contains(".jpg"))
+            .Where(i => i.MimeType!.Contains("image/jpeg"))
+            .ToList();
+        return likes;
+        /*return Likes.ContainsKey(chatId) ? Likes[chatId] : new List<Image>(); //todo get from disk*/
     }
 
-    public bool AddToLikes(long chatId, Image img)
+    public async Task<string> GetUrlToLikedImages(long chatId)
     {
-        if (Likes.ContainsKey(chatId))
+        var urlToFolder = await CreatePublicFolderByChatId(chatId);
+        await MoveLikedImagesToPublicFolder(chatId);
+        return urlToFolder;
+    }
+
+    public async Task<string> CreatePublicFolderByChatId(long chatId)
+    {
+        var createFolderUrl = Secrets.GetUrlFolderOnDisk(chatId);
+        var publishFolderUrl = Secrets.GetUrlPublishFolderOnDisk(chatId);
+
+        string publicUrl;
+        var getFolderIfExists = await _httpClient.GetAsync(createFolderUrl);
+        if (getFolderIfExists.StatusCode == HttpStatusCode.NotFound)
         {
-            if (Likes[chatId].Contains(img))
+            var createdFolderResponse = await _httpClient.PutAsync(createFolderUrl, null); //создаем
+            var publishedFolderResponse = await _httpClient.PutAsync(publishFolderUrl, null); //публикуем
+
+            if (createdFolderResponse.IsSuccessStatusCode && publishedFolderResponse.IsSuccessStatusCode)
             {
-                return false;
+                var response = await _httpClient.GetAsync(createFolderUrl);
+                var content = await response.Content.ReadAsStringAsync();
+                var json = JsonDocument.Parse(content);
+                publicUrl = json.RootElement.GetProperty("public_url").GetString()!;
+                Console.WriteLine($"{DateTime.Now} | Successful CreatePublicFolderByChatId: " +
+                                  $"{response.StatusCode} {response.ReasonPhrase}");
+                return publicUrl;
             }
 
-            Likes[chatId].Add(img);
-            return true;
+            Console.WriteLine($"{DateTime.Now} | Error CreatePublicFolderByChatId: " +
+                              $"{createdFolderResponse.StatusCode} {publishedFolderResponse.ReasonPhrase}");
         }
 
-        Likes.Add(chatId, new List<Image> { img });
-        return true;
+        var existingFolderRequest = await getFolderIfExists.Content.ReadAsStringAsync();
+        var jsonDocument = JsonDocument.Parse(existingFolderRequest);
+        publicUrl = jsonDocument.RootElement.GetProperty("public_url").GetString()!;
+        Console.WriteLine($"{DateTime.Now} | Successful CreatePublicFolderByChatId: " +
+                          $"{getFolderIfExists.StatusCode} {getFolderIfExists.ReasonPhrase}");
+        return publicUrl;
+    }
+
+    public async Task MoveLikedImagesToPublicFolder(long chatId)
+    {
+        var likes = await GetLikesAsync(chatId);
+        foreach (var img in likes)
+        {
+            var url = Secrets.GetUrlCopyImageToFolderOnDisk(
+                chatId: chatId,
+                currentPath: "disk:/" + Secrets.CurrentFolder + "/",
+                imgName: img.Name);
+            var response = await _httpClient.PostAsync(url, null);
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"{DateTime.Now} | Error MoveLikedImagesToPublicFolder: " +
+                                  $"{response.StatusCode} {response.ReasonPhrase}");
+                return;
+            }
+
+            var content = await response.Content.ReadAsStringAsync();
+            var json = JsonDocument.Parse(content);
+            var href = json.RootElement.GetProperty("href").GetString()!;
+            Console.WriteLine($"Successful MoveLikedImagesToPublicFolder request, href: {href}");
+        }
+    }
+
+    public async Task AddToLikesAsync(long chatId, Image img)
+    {
+        await CreatePublicFolderByChatId(chatId);
+        var urlCopyImageToFolderOnDisk = Secrets.GetUrlCopyImageToFolderOnDisk(
+            chatId: chatId,
+            currentPath: "disk:/" + Secrets.CurrentFolder + "/",
+            imgName: img.Name);
+
+        await _httpClient.PostAsync(urlCopyImageToFolderOnDisk, null);
+        Console.WriteLine();
     }
 
     public Image GetRandomImage()
@@ -129,7 +213,7 @@ public class YandexDiskService : IYandexDiskService
 
     public async Task<IList<Folder>> GetFoldersAsync()
     {
-        var response = await _client.GetAsync(Secrets.FoldersRequest);
+        var response = await _httpClient.GetAsync(Secrets.FoldersRequest);
         var jsonString = await response.Content.ReadAsStringAsync();
         var folders = JsonConvert.DeserializeObject<ICollection<Folder>>(
                 jsonString[22..^2],
@@ -148,7 +232,7 @@ public class YandexDiskService : IYandexDiskService
             return;
         }
 
-        var response = await _client.GetAsync($"{Secrets.GetAllImagesRequest}");
+        var response = await _httpClient.GetAsync($"{Secrets.GetUrlAllImagesOnDisk}");
 
         var jsonString = await response.Content.ReadAsStringAsync();
 

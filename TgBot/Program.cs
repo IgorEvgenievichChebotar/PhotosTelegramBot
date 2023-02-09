@@ -8,7 +8,6 @@ using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.InputFiles;
 using Telegram.Bot.Types.ReplyMarkups;
-using File = System.IO.File;
 
 namespace TgBot;
 
@@ -25,8 +24,6 @@ class Program
 
     public static async Task Main(string[] args)
     {
-        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("de-DE");
-
         var bot = new TelegramBotClient($"{Secrets.TelegramBotToken}");
 
         using CancellationTokenSource cts = new();
@@ -72,11 +69,11 @@ class Program
         CancellationToken cts)
     {
         var settings = new Settings
-        {
-            Bot = bot,
-            CancellationToken = cts,
-            Update = update,
-        };
+        (
+            bot: bot,
+            cancellationToken: cts,
+            update: update
+        );
 
         switch (update.Type)
         {
@@ -172,7 +169,7 @@ class Program
 
     private static async Task GetLikesAsync(Settings settings)
     {
-        var likes = _service.GetLikes(settings.ChatId);
+        var likes = await _service.GetLikesAsync(settings.ChatId);
         if (!likes.Any())
         {
             await settings.Bot.SendTextMessageAsync(
@@ -191,17 +188,25 @@ class Program
             cancellationToken: settings.CancellationToken
         );
 
+        var urlToLikedImages = _service.GetUrlToLikedImages(chatId: settings.ChatId);
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
-            text: "Скачать оригиналы архивом?",
-            replyMarkup: new InlineKeyboardMarkup(
-                InlineKeyboardButton.WithCallbackData("Скачать", $"/loadlikes {settings.ChatId}")),
+            text: "Формируется папка с оригиналами на яндекс диске, подожди...",
             cancellationToken: settings.CancellationToken);
+        
+        await settings.Bot.SendTextMessageAsync(
+            chatId: settings.ChatId,
+            text: $"<a href=\"{await urlToLikedImages}\">Папка на диске</a>",
+            parseMode: ParseMode.Html,
+            /*replyMarkup: new InlineKeyboardMarkup(
+                InlineKeyboardButton.WithCallbackData("Скачать архивом", $"/loadlikes {settings.ChatId}")),*/
+            cancellationToken: settings.CancellationToken
+        );
     }
 
     private static async Task DownloadArchiveOfOriginalsAsync(Settings settings)
     {
-        var likes = _service.GetLikes(settings.ChatId);
+        var likes = await _service.GetLikesAsync(settings.ChatId);
 
         static async Task<MemoryStream> CompressImagesToZip(ICollection<Image> images)
         {
@@ -252,14 +257,7 @@ class Program
 
     private static async Task LikeAsync(Settings settings)
     {
-        if (!_service.AddToLikes(settings.ChatId, settings.Image!))
-        {
-            await settings.Bot.SendTextMessageAsync(
-                chatId: settings.ChatId,
-                text: $"{settings.Image!.Name} уже в избранном",
-                cancellationToken: settings.CancellationToken);
-            return;
-        }
+        await _service.AddToLikesAsync(settings.ChatId, settings.Image!);
 
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
@@ -350,6 +348,7 @@ class Program
         }
 
         var dateString = settings.Query.Split(" ")[0];
+        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("de-DE");
         if (DateTime.TryParseExact(
                 dateString,
                 "dd.MM.yyyy",
@@ -385,10 +384,17 @@ class Program
 
 class Settings
 {
-    public ITelegramBotClient Bot { get; init; }
-    public Update Update { get; init; }
+    public Settings(ITelegramBotClient bot, Update update, CancellationToken cancellationToken)
+    {
+        Bot = bot;
+        Update = update;
+        CancellationToken = cancellationToken;
+    }
+
+    public ITelegramBotClient Bot { get; }
+    public Update Update { get; }
     public long ChatId { get; set; }
-    public CancellationToken CancellationToken { get; init; }
+    public CancellationToken CancellationToken { get; }
     public Image? Image { get; set; }
     public string? Cmd { get; set; }
     public string? Query { get; set; }
