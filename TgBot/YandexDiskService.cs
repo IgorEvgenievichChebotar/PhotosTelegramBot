@@ -23,7 +23,7 @@ public interface IYandexDiskService
     Task<Dictionary<string, MemoryStream>> DownloadLikesAsync(long chatId);
     Task<string> GetUrlToLikedImagesAsync(long chatId);
     Task<string> GetPublicFolderUrlByChatIdAsync(long chatId);
-    Task AddToLikesAsync(long chatId, Image img);
+    void AddToLikes(long chatId, Image img);
 }
 
 public class YandexDiskService : IYandexDiskService
@@ -87,10 +87,14 @@ public class YandexDiskService : IYandexDiskService
 
     public async Task<Dictionary<string, MemoryStream>> DownloadLikesAsync(long chatId) // 2 запроса
     {
-        await GetPublicFolderUrlByChatIdAsync(chatId);
-
         var urlFolderOnDisk = Secrets.GetUrlLikedImagesByChatIdOnDisk(chatId);
         var response = await _httpClient.GetAsync(urlFolderOnDisk);
+        if (response.StatusCode == HttpStatusCode.NotFound) // папки нет
+        {
+            await GetPublicFolderUrlByChatIdAsync(chatId); //создать папку
+            response = await _httpClient.GetAsync(urlFolderOnDisk); // повторный запрос
+        }
+
         var jsonString = await response.Content.ReadAsStringAsync();
         var images = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2],
                 new ImageExifConverter())
@@ -98,7 +102,9 @@ public class YandexDiskService : IYandexDiskService
             .Where(i => i.MimeType!.Contains("image/jpeg"));
 
         var likes = new Dictionary<string, MemoryStream>();
-        await Parallel.ForEachAsync(images, async (i, _) => { likes.Add(i.Name, await GetThumbnailImageAsync(i)); });
+        await Parallel.ForEachAsync(
+            images, async (i, _) => { likes.Add(i.Name, await GetThumbnailImageAsync(i)); }
+        );
 
         return likes;
     }
@@ -108,7 +114,7 @@ public class YandexDiskService : IYandexDiskService
         return await GetPublicFolderUrlByChatIdAsync(chatId);
     }
 
-    public async Task<string> GetPublicFolderUrlByChatIdAsync(long chatId) // 1-3 запроса
+    public async Task<string> GetPublicFolderUrlByChatIdAsync(long chatId) // 0-3 запроса
     {
         var createFolderUrl = Secrets.GetUrlFolderOnDisk(chatId);
         var publishFolderUrl = Secrets.GetUrlPublishFolderOnDisk(chatId);
@@ -143,13 +149,13 @@ public class YandexDiskService : IYandexDiskService
         return publicUrl;
     }
 
-    public async Task AddToLikesAsync(long chatId, Image img)
+    public void AddToLikes(long chatId, Image img)
     {
         var urlCopyImageToFolderOnDisk = Secrets.GetUrlCopyImageToFolderOnDisk(
             chatId: chatId,
             currentPath: "disk:/" + Secrets.CurrentFolder + "/",
             imgName: img.Name);
-        await _httpClient.PostAsync(urlCopyImageToFolderOnDisk, null);
+        _httpClient.PostAsync(urlCopyImageToFolderOnDisk, null);
     }
 
     public Image GetRandomImage()

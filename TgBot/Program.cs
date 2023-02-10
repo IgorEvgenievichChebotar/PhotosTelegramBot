@@ -1,12 +1,9 @@
-﻿using System.Diagnostics;
-using System.Globalization;
-using System.IO.Compression;
+﻿using System.Globalization;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Polling;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
-using Telegram.Bot.Types.InputFiles;
 using Telegram.Bot.Types.ReplyMarkups;
 
 namespace TgBot;
@@ -101,6 +98,8 @@ class Program
                     return;
                 }
 
+                #region msg commands
+
                 switch (settings.Cmd.ToLower())
                 {
                     case "/start":
@@ -133,6 +132,8 @@ class Program
                     default:
                         await FindAsync(settings);
                         return;
+
+                    #endregion
                 }
 
             case UpdateType.CallbackQuery:
@@ -144,6 +145,8 @@ class Program
                 {
                     settings.Query = data[(data.IndexOf(" ", StringComparison.Ordinal) + 1)..];
                 }
+
+                #region callback commands
 
                 switch (settings.Cmd)
                 {
@@ -160,6 +163,8 @@ class Program
                     case "/openlikes":
                         await GetLikesAsync(settings);
                         return;
+
+                    #endregion
                 }
 
                 return;
@@ -184,23 +189,17 @@ class Program
             chatId: settings.ChatId,
             media: select,
             cancellationToken: settings.CancellationToken,
-            disableNotification:true
+            disableNotification: true
         );
 
         var urlToLikedImages = _service.GetUrlToLikedImagesAsync(chatId: settings.ChatId);
-        await settings.Bot.SendTextMessageAsync(
-            chatId: settings.ChatId,
-            text: "Формируется папка с оригиналами на яндекс диске, подожди...",
-            cancellationToken: settings.CancellationToken,
-            disableNotification:true
-        );
 
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
             text: $"<a href=\"{await urlToLikedImages}\">Папка на диске</a>",
             parseMode: ParseMode.Html,
             cancellationToken: settings.CancellationToken,
-            disableNotification:true
+            disableNotification: true
         );
     }
 
@@ -222,12 +221,16 @@ class Program
     {
         settings.Image = _service.GetImage(settings.Query!);
 
-        await _service.AddToLikesAsync(settings.ChatId, settings.Image!);
+        var url = await _service.GetPublicFolderUrlByChatIdAsync(settings.ChatId);
+        _service.AddToLikes(settings.ChatId, settings.Image!);
 
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
-            text: $"{settings.Image!.Name} добавлено в избранное",
-            cancellationToken: settings.CancellationToken);
+            text: $"{settings.Image!.Name} добавлено в <a href=\"{url}\">избранное</a>",
+            disableWebPagePreview: true,
+            cancellationToken: settings.CancellationToken,
+            parseMode: ParseMode.Html,
+            disableNotification: true);
     }
 
     private static async Task ChangeDirAsync(Settings settings)
@@ -290,10 +293,8 @@ class Program
                     InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}"),
                     InlineKeyboardButton.WithCallbackData("🖤", $"/like {img.Name}"),
                 }),
-                cancellationToken:
-                settings.CancellationToken,
-                disableNotification:
-                true
+                cancellationToken: settings.CancellationToken,
+                disableNotification: true
             );
 
             var username = (settings.Update.Message is not null
