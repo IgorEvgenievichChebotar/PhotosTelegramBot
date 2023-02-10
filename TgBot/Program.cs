@@ -125,7 +125,6 @@ class Program
                             cancellationToken: cts);
                         return;
                     case "/like":
-                        settings.Image = _service.GetImage(settings.Query!);
                         await LikeAsync(settings);
                         return;
                     case "/likes" or "избранные" or "🖤":
@@ -158,8 +157,8 @@ class Program
                     case "/changedir":
                         await ChangeDirAsync(settings);
                         return;
-                    case "/loadlikes":
-                        await DownloadArchiveOfOriginalsAsync(settings);
+                    case "/openlikes":
+                        await GetLikesAsync(settings);
                         return;
                 }
 
@@ -169,7 +168,8 @@ class Program
 
     private static async Task GetLikesAsync(Settings settings)
     {
-        var likes = await _service.GetLikesAsync(settings.ChatId);
+        var likes = await _service.DownloadLikesAsync(settings.ChatId);
+
         if (!likes.Any())
         {
             await settings.Bot.SendTextMessageAsync(
@@ -179,67 +179,29 @@ class Program
             return;
         }
 
-        var thumbnails = await _service.GetThumbnailImagesAsync(likes);
+        var select = likes.Select(pair => new InputMediaPhoto(new InputMedia(pair.Value, pair.Key)));
         await settings.Bot.SendMediaGroupAsync(
             chatId: settings.ChatId,
-            media: thumbnails
-                .Take(10) //todo
-                .Zip(likes, (ms, i) => new InputMediaPhoto(new InputMedia(ms, i.Name))),
-            cancellationToken: settings.CancellationToken
+            media: select,
+            cancellationToken: settings.CancellationToken,
+            disableNotification:true
         );
 
-        var urlToLikedImages = _service.GetUrlToLikedImages(chatId: settings.ChatId);
+        var urlToLikedImages = _service.GetUrlToLikedImagesAsync(chatId: settings.ChatId);
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
             text: "Формируется папка с оригиналами на яндекс диске, подожди...",
-            cancellationToken: settings.CancellationToken);
-        
+            cancellationToken: settings.CancellationToken,
+            disableNotification:true
+        );
+
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
             text: $"<a href=\"{await urlToLikedImages}\">Папка на диске</a>",
             parseMode: ParseMode.Html,
-            /*replyMarkup: new InlineKeyboardMarkup(
-                InlineKeyboardButton.WithCallbackData("Скачать архивом", $"/loadlikes {settings.ChatId}")),*/
-            cancellationToken: settings.CancellationToken
+            cancellationToken: settings.CancellationToken,
+            disableNotification:true
         );
-    }
-
-    private static async Task DownloadArchiveOfOriginalsAsync(Settings settings)
-    {
-        var likes = await _service.GetLikesAsync(settings.ChatId);
-
-        static async Task<MemoryStream> CompressImagesToZip(ICollection<Image> images)
-        {
-            var sw = Stopwatch.StartNew();
-            var imageStreams = await _service.GetOriginalImagesAsync(images);
-            using var archiveStream = new MemoryStream();
-            using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Create, true);
-
-            var index = 0;
-            foreach (var imageStream in imageStreams)
-            {
-                var entry = archive.CreateEntry($"image{index}.jpg");
-                await using (var entryStream = entry.Open())
-                {
-                    await imageStream.CopyToAsync(entryStream);
-                }
-
-                index++;
-            }
-
-            Console.WriteLine(sw.ElapsedMilliseconds + $"ms на архивацию {images.Count} оригиналов");
-            return archiveStream;
-        }
-
-        var zipArchive = await CompressImagesToZip(likes);
-
-        await settings.Bot.SendDocumentAsync(
-            chatId: settings.ChatId,
-            document: new InputOnlineFile(new MemoryStream(zipArchive.ToArray()), "originals.zip"),
-            caption: "Архив фоток в оригинальном качестве",
-            parseMode: ParseMode.Html,
-            replyMarkup: defaultReplyKeyboardMarkup,
-            cancellationToken: settings.CancellationToken);
     }
 
     private static async Task StartAsync(Settings settings)
@@ -248,7 +210,8 @@ class Program
         await settings.Bot.SendTextMessageAsync(
             text: "Этот бот умеет присылать фотки с яндекс диска, " +
                   "искать по названию/дате, " +
-                  "добавлять в избранное и скачивать оригиналы архивом",
+                  "добавлять в избранное " +
+                  "и формировать папку с оригиналами на яндекс диске.",
             chatId: settings.ChatId,
             replyMarkup: defaultReplyKeyboardMarkup,
             cancellationToken: settings.CancellationToken,
@@ -257,6 +220,8 @@ class Program
 
     private static async Task LikeAsync(Settings settings)
     {
+        settings.Image = _service.GetImage(settings.Query!);
+
         await _service.AddToLikesAsync(settings.ChatId, settings.Image!);
 
         await settings.Bot.SendTextMessageAsync(
@@ -285,8 +250,7 @@ class Program
     private static async Task NoAccessAsync(Settings settings)
     {
         var msg = settings.Update.Message!;
-        Console.WriteLine(
-            $"{DateTime.Now} | {msg.Chat.Username}, {msg.Chat.FirstName} {msg.Chat.LastName} - Нет доступа");
+        Console.WriteLine($"{DateTime.Now} | {msg.Chat.FirstName} написала боту: {msg}");
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
             text: "Нет доступа",
