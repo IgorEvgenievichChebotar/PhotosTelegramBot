@@ -24,6 +24,7 @@ public interface IYandexDiskService
     Task<string> GetUrlToLikedImagesAsync(long chatId);
     Task<string> GetPublicFolderUrlByChatIdAsync(long chatId);
     void AddToLikes(long chatId, Image img);
+    void DeleteImage(string imgName);
 }
 
 public class YandexDiskService : IYandexDiskService
@@ -158,6 +159,14 @@ public class YandexDiskService : IYandexDiskService
         _httpClient.PostAsync(urlCopyImageToFolderOnDisk, null);
     }
 
+    public void DeleteImage(string imgName)
+    {
+        var url = Secrets.GetUrlDeleteImageOnDisk(imgName);
+        _httpClient.DeleteAsync(url);
+        var image = ImagesCache.Find(i => i.Name == imgName);
+        ImagesCache.Remove(image!);
+    }
+
     public Image GetRandomImage()
     {
         var img = ImagesCache
@@ -190,7 +199,8 @@ public class YandexDiskService : IYandexDiskService
 
     public async Task<List<Folder>> GetFoldersAsync()
     {
-        var response = await _httpClient.GetAsync(Secrets.GetUrlFoldersRequest());
+        var url = Secrets.GetUrlFoldersRequest();
+        var response = await _httpClient.GetAsync(url);
         var jsonString = await response.Content.ReadAsStringAsync();
         var folders = JsonConvert.DeserializeObject<ICollection<Folder>>(
                 jsonString[22..^2],
@@ -217,7 +227,7 @@ public class YandexDiskService : IYandexDiskService
         Console.WriteLine(
             $"{DateTime.Now} | {cacheImagesCount} фоток для кэша загружены из папки {Secrets.TargetFolder}. " +
             $"Всего: {ImagesCache.Count}");
-
+        
         LoadRemainingAllImagesAsync();
 
         async void LoadRemainingAllImagesAsync()

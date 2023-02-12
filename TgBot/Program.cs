@@ -163,12 +163,37 @@ class Program
                     case "/openlikes":
                         await GetLikesAsync(settings);
                         return;
+                    case "/delete":
+                        settings.Image = _service.GetImage(settings.Query!);
+                        await DeleteAsync(settings);
+                        return;
+                    case "/confirmDelete":
+                        var imgName = settings.Query!;
+                        _service.DeleteImage(imgName);
+                        await settings.Bot.SendTextMessageAsync(
+                            chatId: settings.ChatId,
+                            text: $"{imgName} удалено.",
+                            cancellationToken: settings.CancellationToken);
+                        return;
 
                     #endregion
                 }
 
                 return;
         }
+    }
+
+    private static async Task DeleteAsync(Settings settings)
+    {
+        await settings.Bot.SendPhotoAsync(
+            chatId: settings.ChatId,
+            photo: (await _service.LoadThumbnailImageAsync(settings.Image!))!,
+            caption: $"Точно удалить {settings.Image!.Name}?",
+            parseMode: ParseMode.Html,
+            replyMarkup: new InlineKeyboardMarkup(
+                InlineKeyboardButton.WithCallbackData("да", $"/confirmDelete {settings.Image.Name}")
+            )
+        );
     }
 
     private static async Task GetLikesAsync(Settings settings)
@@ -293,6 +318,7 @@ class Program
                 {
                     InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}"),
                     InlineKeyboardButton.WithCallbackData("🖤", $"/like {img.Name}"),
+                    InlineKeyboardButton.WithCallbackData("Удалить с диска", $"/delete {img.Name}"),
                 }),
                 cancellationToken: settings.CancellationToken,
                 disableNotification: true

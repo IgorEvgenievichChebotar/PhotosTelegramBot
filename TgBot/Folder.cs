@@ -1,7 +1,4 @@
-﻿using System.Text.Json;
-using Newtonsoft.Json;
-
-namespace TgBot;
+﻿namespace TgBot;
 
 public class Folder
 {
