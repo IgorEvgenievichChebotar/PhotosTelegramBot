@@ -15,12 +15,14 @@ class Program
     private static readonly ReplyKeyboardMarkup defaultReplyKeyboardMarkup = new(new[]
     {
         new KeyboardButton("Ещё"),
-        new KeyboardButton("Сменить папку"),
+        /*new KeyboardButton("Сменить папку"),*/
         new KeyboardButton("Избранные")
     }) { ResizeKeyboard = true };
 
     public static async Task Main(string[] args)
     {
+        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
         var bot = new TelegramBotClient($"{Secrets.TelegramBotToken}");
 
         using CancellationTokenSource cts = new();
@@ -112,7 +114,7 @@ class Program
                     case "/find":
                         await FindAsync(settings);
                         return;
-                    case "сменить":
+                    /*case "сменить":
                         var folders = await _service.GetFoldersAsync();
                         await bot.SendTextMessageAsync(
                             chatId: chatId,
@@ -122,7 +124,7 @@ class Program
                                     { InlineKeyboardButton.WithCallbackData(f.Name!, $"/changedir {f.Name}") })
                             ),
                             cancellationToken: cts);
-                        return;
+                        return;*/
                     case "/like":
                         await LikeAsync(settings);
                         return;
@@ -157,9 +159,9 @@ class Program
                         settings.Image = _service.GetImage(settings.Query!);
                         await LikeAsync(settings);
                         return;
-                    case "/changedir":
+                    /*case "/changedir":
                         await ChangeDirAsync(settings);
-                        return;
+                        return;*/
                     case "/openlikes":
                         await GetLikesAsync(settings);
                         return;
