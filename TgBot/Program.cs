@@ -19,7 +19,7 @@ class Program
         new KeyboardButton("Избранные")
     }) { ResizeKeyboard = true };
 
-    public static async Task Main(string[] args)
+    public static void Main(string[] args)
     {
         var bot = new TelegramBotClient($"{Secrets.TelegramBotToken}");
 
@@ -30,7 +30,8 @@ class Program
             AllowedUpdates = Array.Empty<UpdateType>() // receive all update types
         };
 
-        await _service.LoadImagesAsync();
+        _service.LoadImagesAsync(cacheCount:20);
+        Thread.Sleep(1000); // втупую подождать пока не подгрузится кэш
 
         bot.StartReceiving(
             updateHandler: async (botClient, update, cancellationToken) =>
@@ -173,7 +174,7 @@ class Program
 
     private static async Task GetLikesAsync(Settings settings)
     {
-        var likes = await _service.DownloadLikesAsync(settings.ChatId);
+        var likes = await _service.LoadLikesAsync(settings.ChatId);
 
         if (!likes.Any())
         {
@@ -184,10 +185,11 @@ class Program
             return;
         }
 
-        var select = likes.Select(pair => new InputMediaPhoto(new InputMedia(pair.Value, pair.Key)));
+        var mediaPhotos = likes.Select(pair =>
+            new InputMediaPhoto(new InputMedia(pair.Value, pair.Key)));
         await settings.Bot.SendMediaGroupAsync(
             chatId: settings.ChatId,
-            media: select,
+            media: mediaPhotos.Take(10),
             cancellationToken: settings.CancellationToken,
             disableNotification: true
         );
@@ -236,15 +238,15 @@ class Program
     private static async Task ChangeDirAsync(Settings settings)
     {
         var parentFolder = settings.Query!;
-        if (Secrets.CurrentFolder != parentFolder)
+        if (Secrets.TargetFolder != parentFolder)
         {
-            Secrets.CurrentFolder = parentFolder;
-            await _service.LoadImagesAsync();
+            Secrets.TargetFolder = parentFolder;
+            await _service.LoadImagesAsync(cacheCount:20);
         }
 
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
-            text: $"Папка изменена на {Secrets.CurrentFolder}",
+            text: $"Папка изменена на {Secrets.TargetFolder}",
             replyMarkup: defaultReplyKeyboardMarkup,
             cancellationToken: settings.CancellationToken,
             disableNotification: true);
@@ -285,9 +287,9 @@ class Program
             var img = settings.Image!;
             await settings.Bot.SendPhotoAsync(
                 chatId: settings.ChatId,
-                caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
+                caption: $"<a href=\"{Secrets.GetUrlOpenInBrowser + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
                 parseMode: ParseMode.Html,
-                photo: (await _service.GetThumbnailImageAsync(img))!,
+                photo: (await _service.LoadThumbnailImageAsync(img))!,
                 replyMarkup: new InlineKeyboardMarkup(new[]
                 {
                     InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}"),

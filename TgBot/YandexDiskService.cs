@@ -15,12 +15,12 @@ public interface IYandexDiskService
     void OpenImageInBrowser(string name);
     List<Image> GetImagesByDate(DateTime date);
     Task<List<Folder>> GetFoldersAsync();
-    Task LoadImagesAsync();
-    Task<MemoryStream> GetThumbnailImageAsync(Image img);
-    Task<MemoryStream> GetOriginalImageAsync(Image img);
-    Task<List<MemoryStream>> GetThumbnailImagesAsync(IEnumerable<Image> images);
-    Task<List<MemoryStream>> DownloadOriginalImagesAsync(IEnumerable<Image> images);
-    Task<Dictionary<string, MemoryStream>> DownloadLikesAsync(long chatId);
+    Task LoadImagesAsync(int cacheCount);
+    Task<MemoryStream> LoadThumbnailImageAsync(Image img);
+    Task<MemoryStream> LoadOriginalImageAsync(Image img);
+    Task<List<MemoryStream>> LoadThumbnailImagesAsync(IEnumerable<Image> images);
+    Task<List<MemoryStream>> LoadOriginalImagesAsync(IEnumerable<Image> images);
+    Task<Dictionary<string, MemoryStream>> LoadLikesAsync(long chatId);
     Task<string> GetUrlToLikedImagesAsync(long chatId);
     Task<string> GetPublicFolderUrlByChatIdAsync(long chatId);
     void AddToLikes(long chatId, Image img);
@@ -45,7 +45,7 @@ public class YandexDiskService : IYandexDiskService
         );
     }
 
-    public async Task<MemoryStream> GetThumbnailImageAsync(Image img)
+    public async Task<MemoryStream> LoadThumbnailImageAsync(Image img)
     {
         var sw = Stopwatch.StartNew();
         var response = await _httpClient.GetAsync(img.Preview, HttpCompletionOption.ResponseHeadersRead);
@@ -57,7 +57,7 @@ public class YandexDiskService : IYandexDiskService
         return new MemoryStream(content);
     }
 
-    public async Task<MemoryStream> GetOriginalImageAsync(Image img)
+    public async Task<MemoryStream> LoadOriginalImageAsync(Image img)
     {
         var sw = Stopwatch.StartNew();
         var response = await _httpClient.GetAsync(img.File, HttpCompletionOption.ResponseHeadersRead);
@@ -69,23 +69,23 @@ public class YandexDiskService : IYandexDiskService
         return new MemoryStream(content);
     }
 
-    public async Task<List<MemoryStream>> GetThumbnailImagesAsync(IEnumerable<Image> images)
+    public async Task<List<MemoryStream>> LoadThumbnailImagesAsync(IEnumerable<Image> images)
     {
         var streams = new List<MemoryStream>();
         await Parallel.ForEachAsync(
             images,
-            async (i, _) => { streams.Add(await GetThumbnailImageAsync(i)); });
+            async (i, _) => { streams.Add(await LoadThumbnailImageAsync(i)); });
         return streams;
     }
 
-    public async Task<List<MemoryStream>> DownloadOriginalImagesAsync(IEnumerable<Image> images)
+    public async Task<List<MemoryStream>> LoadOriginalImagesAsync(IEnumerable<Image> images)
     {
         var streams = new List<MemoryStream>();
-        await Parallel.ForEachAsync(images, async (i, _) => { streams.Add(await GetOriginalImageAsync(i)); });
+        await Parallel.ForEachAsync(images, async (i, _) => { streams.Add(await LoadOriginalImageAsync(i)); });
         return streams;
     }
 
-    public async Task<Dictionary<string, MemoryStream>> DownloadLikesAsync(long chatId) // 2 запроса
+    public async Task<Dictionary<string, MemoryStream>> LoadLikesAsync(long chatId) // 2 запроса
     {
         var urlFolderOnDisk = Secrets.GetUrlLikedImagesByChatIdOnDisk(chatId);
         var response = await _httpClient.GetAsync(urlFolderOnDisk);
@@ -103,7 +103,7 @@ public class YandexDiskService : IYandexDiskService
 
         var likes = new Dictionary<string, MemoryStream>();
         await Parallel.ForEachAsync(
-            images, async (i, _) => { likes.Add(i.Name, await GetThumbnailImageAsync(i)); }
+            images, async (i, _) => { likes.Add(i.Name, await LoadThumbnailImageAsync(i)); }
         );
 
         return likes;
@@ -153,7 +153,7 @@ public class YandexDiskService : IYandexDiskService
     {
         var urlCopyImageToFolderOnDisk = Secrets.GetUrlCopyImageToFolderOnDisk(
             chatId: chatId,
-            currentPath: "disk:/" + Secrets.CurrentFolder + "/",
+            currentPath: "disk:/" + Secrets.TargetFolder + "/",
             imgName: img.Name);
         _httpClient.PostAsync(urlCopyImageToFolderOnDisk, null);
     }
@@ -161,7 +161,7 @@ public class YandexDiskService : IYandexDiskService
     public Image GetRandomImage()
     {
         var img = ImagesCache
-            .Where(i => Secrets.CurrentFolder.Contains(i.ParentFolder!.Name!))
+            .Where(i => Secrets.TargetFolder.Contains(i.ParentFolder!.Name!))
             .OrderBy(_ => Guid.NewGuid())
             .First();
         return img;
@@ -184,13 +184,13 @@ public class YandexDiskService : IYandexDiskService
     public Image? FindImageByName(string imgName)
     {
         return ImagesCache
-            .Where(i => Secrets.CurrentFolder.Contains(i.ParentFolder!.Name!))
+            .Where(i => Secrets.TargetFolder.Contains(i.ParentFolder!.Name!))
             .FirstOrDefault(i => i.Name.ToLower().Contains(imgName.ToLower()));
     }
 
     public async Task<List<Folder>> GetFoldersAsync()
     {
-        var response = await _httpClient.GetAsync(Secrets.FoldersRequest);
+        var response = await _httpClient.GetAsync(Secrets.GetUrlFoldersRequest());
         var jsonString = await response.Content.ReadAsStringAsync();
         var folders = JsonConvert.DeserializeObject<ICollection<Folder>>(
                 jsonString[22..^2],
@@ -200,46 +200,51 @@ public class YandexDiskService : IYandexDiskService
         return folders;
     }
 
-    public async Task LoadImagesAsync()
+    public async Task LoadImagesAsync(int cacheCount = 20)
     {
-        if (ImagesCache.Any(i => Secrets.CurrentFolder.Contains(i.ParentFolder!.Name!)))
+        if (ImagesCache.Any(i => Secrets.TargetFolder.Contains(i.ParentFolder!.Name!)))
         {
             Console.WriteLine(
-                $"{DateTime.Now} | Фотки в папке {Secrets.CurrentFolder} уже есть; Всего: {ImagesCache.Count}");
+                $"{DateTime.Now} | Фотки в папке {Secrets.TargetFolder} уже есть; " +
+                $"Всего: {ImagesCache.Count}");
             return;
         }
 
-        var response = await _httpClient.GetAsync($"{Secrets.GetUrlAllImagesOnDisk}");
-
-        var jsonString = await response.Content.ReadAsStringAsync();
-
-        var newImages = new List<Image>();
-        if (jsonString.Contains("image/jpeg"))
-        {
-            newImages = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2],
-                    new ImageExifConverter())
-                .Where(i => i.Name.Contains(".jpg"))
-                .Where(i => i.MimeType!.Contains("image/jpeg"))
-                .ToList();
-            ImagesCache.AddRange(newImages);
-        }
-
-
-        var folders = await GetFoldersAsync();
-        if (folders.Any())
-        {
-            Console.WriteLine($"Есть {folders.Count} папок в {Secrets.CurrentFolder}");
-        }
+        var responseCache = await _httpClient.GetAsync($"{Secrets.GetUrlAllImagesOnDisk(limit: cacheCount)}");
+        var cacheImagesCount = await LoadAndDeserializeImages(responseCache);
 
         Console.WriteLine(
-            $"{DateTime.Now} | {newImages.Count} фоток загружены из папки {Secrets.CurrentFolder}. Всего: {ImagesCache.Count}");
+            $"{DateTime.Now} | {cacheImagesCount} фоток для кэша загружены из папки {Secrets.TargetFolder}. " +
+            $"Всего: {ImagesCache.Count}");
+
+        var response = await _httpClient.GetAsync($"{Secrets.GetUrlAllImagesOnDisk(offset: cacheCount)}");
+        var remainingImagesCount = await LoadAndDeserializeImages(response);
+
+        Console.WriteLine(
+            $"{DateTime.Now} | {remainingImagesCount} фоток загружены из папки {Secrets.TargetFolder}. " +
+            $"Всего: {ImagesCache.Count}");
+    }
+
+    private async Task<int> LoadAndDeserializeImages(HttpResponseMessage response)
+    {
+        var images = new List<Image>();
+        var jsonString = await response.Content.ReadAsStringAsync();
+        if (!jsonString.Contains("image/jpeg")) return images.Count;
+        images = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2],
+                new ImageExifConverter())
+            .Where(i => i.Name.Contains(".jpg"))
+            .Where(i => i.MimeType!.Contains("image/jpeg"))
+            .ToList();
+        ImagesCache.AddRange(images);
+
+        return images.Count;
     }
 
     public void OpenImageInBrowser(string name)
     {
         var img = FindImageByName(name);
         if (img == null) return;
-        var url = Secrets.OpenInBrowserUrl + img.Name;
+        var url = Secrets.GetUrlOpenInBrowser + img.Name;
         Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
     }
 
