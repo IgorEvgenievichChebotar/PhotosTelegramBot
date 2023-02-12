@@ -19,7 +19,7 @@ class Program
         new KeyboardButton("Избранные")
     }) { ResizeKeyboard = true };
 
-    public static void Main(string[] args)
+    public static async Task Main(string[] args)
     {
         var bot = new TelegramBotClient($"{Secrets.TelegramBotToken}");
 
@@ -30,8 +30,7 @@ class Program
             AllowedUpdates = Array.Empty<UpdateType>() // receive all update types
         };
 
-        _service.LoadImagesAsync(cacheCount:20);
-        Thread.Sleep(1000); // втупую подождать пока не подгрузится кэш
+        await _service.LoadImagesAsync();
 
         bot.StartReceiving(
             updateHandler: async (botClient, update, cancellationToken) =>
@@ -241,7 +240,7 @@ class Program
         if (Secrets.TargetFolder != parentFolder)
         {
             Secrets.TargetFolder = parentFolder;
-            await _service.LoadImagesAsync(cacheCount:20);
+            await _service.LoadImagesAsync();
         }
 
         await settings.Bot.SendTextMessageAsync(

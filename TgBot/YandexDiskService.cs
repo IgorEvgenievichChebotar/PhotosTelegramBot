@@ -15,7 +15,7 @@ public interface IYandexDiskService
     void OpenImageInBrowser(string name);
     List<Image> GetImagesByDate(DateTime date);
     Task<List<Folder>> GetFoldersAsync();
-    Task LoadImagesAsync(int cacheCount);
+    Task LoadImagesAsync();
     Task<MemoryStream> LoadThumbnailImageAsync(Image img);
     Task<MemoryStream> LoadOriginalImageAsync(Image img);
     Task<List<MemoryStream>> LoadThumbnailImagesAsync(IEnumerable<Image> images);
@@ -200,8 +200,9 @@ public class YandexDiskService : IYandexDiskService
         return folders;
     }
 
-    public async Task LoadImagesAsync(int cacheCount = 20)
+    public async Task LoadImagesAsync()
     {
+        var cacheCount = Secrets.CacheCount;
         if (ImagesCache.Any(i => Secrets.TargetFolder.Contains(i.ParentFolder!.Name!)))
         {
             Console.WriteLine(
@@ -217,12 +218,17 @@ public class YandexDiskService : IYandexDiskService
             $"{DateTime.Now} | {cacheImagesCount} фоток для кэша загружены из папки {Secrets.TargetFolder}. " +
             $"Всего: {ImagesCache.Count}");
 
-        var response = await _httpClient.GetAsync($"{Secrets.GetUrlAllImagesOnDisk(offset: cacheCount)}");
-        var remainingImagesCount = await LoadAndDeserializeImages(response);
+        LoadRemainingAllImagesAsync();
 
-        Console.WriteLine(
-            $"{DateTime.Now} | {remainingImagesCount} фоток загружены из папки {Secrets.TargetFolder}. " +
-            $"Всего: {ImagesCache.Count}");
+        async void LoadRemainingAllImagesAsync()
+        {
+            var response = await _httpClient.GetAsync($"{Secrets.GetUrlAllImagesOnDisk(offset: cacheCount)}");
+            var remainingImagesCount = await LoadAndDeserializeImages(response);
+
+            Console.WriteLine(
+                $"{DateTime.Now} | {remainingImagesCount} оставшихся фоток подгружено из папки {Secrets.TargetFolder}. " +
+                $"Всего: {ImagesCache.Count}");
+        }
     }
 
     private async Task<int> LoadAndDeserializeImages(HttpResponseMessage response)
