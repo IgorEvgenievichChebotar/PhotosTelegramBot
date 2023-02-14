@@ -216,7 +216,7 @@ class Program
 
         await settings.Bot.SendMediaGroupAsync(
             chatId: settings.ChatId,
-            media: mediaPhotos.Take(10),
+            media: mediaPhotos.TakeLast(10).Reverse(),
             cancellationToken: settings.CancellationToken,
             disableNotification: true
         );
