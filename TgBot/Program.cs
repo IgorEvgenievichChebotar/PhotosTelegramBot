@@ -60,6 +60,7 @@ class Program
         );
 
         Console.ReadLine();
+        cts.Cancel();
     }
 
     private static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update,
@@ -105,6 +106,7 @@ class Program
                     case "/start":
                         await StartAsync(settings);
                         await HelpAsync(settings);
+                        await _service.GetLikesAsync(settings.ChatId);
                         return;
                     case "/help":
                         await HelpAsync(settings);
@@ -198,7 +200,7 @@ class Program
 
     private static async Task GetLikesAsync(Settings settings)
     {
-        var likes = await _service.LoadLikesAsync(settings.ChatId);
+        var likes = await _service.GetLikesAsync(settings.ChatId);
 
         if (!likes.Any())
         {
@@ -209,8 +211,9 @@ class Program
             return;
         }
 
-        var mediaPhotos = likes.Select(pair =>
-            new InputMediaPhoto(new InputMedia(pair.Value, pair.Key)));
+        var mediaPhotos = likes
+            .Select(pair => new InputMediaPhoto(new InputMedia(new MemoryStream(pair.Value), pair.Key)));
+
         await settings.Bot.SendMediaGroupAsync(
             chatId: settings.ChatId,
             media: mediaPhotos.Take(10),

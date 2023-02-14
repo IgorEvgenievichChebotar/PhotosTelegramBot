@@ -20,7 +20,7 @@ public interface IYandexDiskService
     Task<MemoryStream> LoadOriginalImageAsync(Image img);
     Task<List<MemoryStream>> LoadThumbnailImagesAsync(IEnumerable<Image> images);
     Task<List<MemoryStream>> LoadOriginalImagesAsync(IEnumerable<Image> images);
-    Task<Dictionary<string, MemoryStream>> LoadLikesAsync(long chatId);
+    Task<Dictionary<string, byte[]>> GetLikesAsync(long chatId);
     Task<string> GetUrlToLikedImagesAsync(long chatId);
     Task<string> GetPublicFolderUrlByChatIdAsync(long chatId);
     void AddToLikes(long chatId, Image img);
@@ -30,11 +30,13 @@ public interface IYandexDiskService
 public class YandexDiskService : IYandexDiskService
 {
     private readonly List<Image> ImagesCache;
+    private readonly Dictionary<long, Dictionary<string, byte[]>> LikesCache;
     private readonly HttpClient _httpClient;
 
     public YandexDiskService()
     {
         ImagesCache = new List<Image>();
+        LikesCache = new Dictionary<long, Dictionary<string, byte[]>>();
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.Add(
             "Authorization",
@@ -86,8 +88,15 @@ public class YandexDiskService : IYandexDiskService
         return streams;
     }
 
-    public async Task<Dictionary<string, MemoryStream>> LoadLikesAsync(long chatId) // 2 запроса
+    public async Task<Dictionary<string, byte[]>> GetLikesAsync(long chatId) // 2 запроса
     {
+        if (LikesCache.ContainsKey(chatId))
+        {
+            return LikesCache[chatId];
+        }
+
+        LikesCache[chatId] = new Dictionary<string, byte[]>();
+
         var urlFolderOnDisk = Secrets.GetUrlLikedImagesByChatIdOnDisk(chatId);
         var response = await _httpClient.GetAsync(urlFolderOnDisk);
         if (response.StatusCode == HttpStatusCode.NotFound) // папки нет
@@ -102,12 +111,11 @@ public class YandexDiskService : IYandexDiskService
             .Where(i => i.Name.Contains(".jpg"))
             .Where(i => i.MimeType!.Contains("image/jpeg"));
 
-        var likes = new Dictionary<string, MemoryStream>();
         await Parallel.ForEachAsync(
-            images, async (i, _) => { likes.Add(i.Name, await LoadThumbnailImageAsync(i)); }
+            images, async (i, _) => { LikesCache[chatId].Add(i.Name, (await LoadThumbnailImageAsync(i)).ToArray()); }
         );
 
-        return likes;
+        return LikesCache[chatId];
     }
 
     public async Task<string> GetUrlToLikedImagesAsync(long chatId)
@@ -156,7 +164,12 @@ public class YandexDiskService : IYandexDiskService
             chatId: chatId,
             currentPath: "disk:/" + Secrets.TargetFolder + "/",
             imgName: img.Name);
+
         _httpClient.PostAsync(urlCopyImageToFolderOnDisk, null);
+
+        var bytes = LoadThumbnailImageAsync(img).Result.ToArray();
+
+        LikesCache[chatId].Add(img.Name, bytes);
     }
 
     public void DeleteImage(string imgName)
@@ -227,7 +240,7 @@ public class YandexDiskService : IYandexDiskService
         Console.WriteLine(
             $"{DateTime.Now} | {cacheImagesCount} фоток для кэша загружены из папки {Secrets.TargetFolder}. " +
             $"Всего: {ImagesCache.Count}");
-        
+
         LoadRemainingAllImagesAsync();
 
         async void LoadRemainingAllImagesAsync()
