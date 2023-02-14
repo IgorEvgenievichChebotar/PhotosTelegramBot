@@ -189,7 +189,7 @@ class Program
     {
         await settings.Bot.SendPhotoAsync(
             chatId: settings.ChatId,
-            photo: (await _service.LoadThumbnailImageAsync(settings.Image!))!,
+            photo: new MemoryStream(await _service.LoadThumbnailImageAsync(settings.Image!))!,
             caption: $"Точно удалить {settings.Image!.Name}?",
             parseMode: ParseMode.Html,
             replyMarkup: new InlineKeyboardMarkup(
@@ -316,7 +316,7 @@ class Program
                 chatId: settings.ChatId,
                 caption: $"<a href=\"{Secrets.GetUrlOpenInBrowser + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
                 parseMode: ParseMode.Html,
-                photo: (await _service.LoadThumbnailImageAsync(img))!,
+                photo: new MemoryStream(await _service.LoadThumbnailImageAsync(img))!,
                 replyMarkup: new InlineKeyboardMarkup(new[]
                 {
                     InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}"),

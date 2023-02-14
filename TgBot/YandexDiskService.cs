@@ -16,10 +16,10 @@ public interface IYandexDiskService
     List<Image> GetImagesByDate(DateTime date);
     Task<List<Folder>> GetFoldersAsync();
     Task LoadImagesAsync();
-    Task<MemoryStream> LoadThumbnailImageAsync(Image img);
-    Task<MemoryStream> LoadOriginalImageAsync(Image img);
-    Task<List<MemoryStream>> LoadThumbnailImagesAsync(IEnumerable<Image> images);
-    Task<List<MemoryStream>> LoadOriginalImagesAsync(IEnumerable<Image> images);
+    Task<byte[]> LoadThumbnailImageAsync(Image img);
+    Task<byte[]> LoadOriginalImageAsync(Image img);
+    Task<List<byte[]>> LoadThumbnailImagesAsync(IEnumerable<Image> images);
+    Task<List<byte[]>> LoadOriginalImagesAsync(IEnumerable<Image> images);
     Task<Dictionary<string, byte[]>> GetLikesAsync(long chatId);
     Task<string> GetUrlToLikedImagesAsync(long chatId);
     Task<string> GetPublicFolderUrlByChatIdAsync(long chatId);
@@ -48,7 +48,7 @@ public class YandexDiskService : IYandexDiskService
         );
     }
 
-    public async Task<MemoryStream> LoadThumbnailImageAsync(Image img)
+    public async Task<byte[]> LoadThumbnailImageAsync(Image img)
     {
         var sw = Stopwatch.StartNew();
         var response = await _httpClient.GetAsync(img.Preview, HttpCompletionOption.ResponseHeadersRead);
@@ -57,10 +57,10 @@ public class YandexDiskService : IYandexDiskService
             ? $"{DateTime.Now} | Photo {img.Name} downloaded successfully in {sw.ElapsedMilliseconds}ms"
             : $"{DateTime.Now} | Error downloading {img.Name}: {response.StatusCode} {response.ReasonPhrase}");
 
-        return new MemoryStream(content);
+        return content;
     }
 
-    public async Task<MemoryStream> LoadOriginalImageAsync(Image img)
+    public async Task<byte[]> LoadOriginalImageAsync(Image img)
     {
         var sw = Stopwatch.StartNew();
         var response = await _httpClient.GetAsync(img.File, HttpCompletionOption.ResponseHeadersRead);
@@ -69,23 +69,23 @@ public class YandexDiskService : IYandexDiskService
             ? $"{DateTime.Now} | Photo {img.Name} downloaded successfully in {sw.ElapsedMilliseconds}ms"
             : $"{DateTime.Now} | Error downloading {img.Name}");
 
-        return new MemoryStream(content);
+        return content;
     }
 
-    public async Task<List<MemoryStream>> LoadThumbnailImagesAsync(IEnumerable<Image> images)
+    public async Task<List<byte[]>> LoadThumbnailImagesAsync(IEnumerable<Image> images)
     {
-        var streams = new List<MemoryStream>();
+        var bytes = new List<byte[]>();
         await Parallel.ForEachAsync(
             images,
-            async (i, _) => { streams.Add(await LoadThumbnailImageAsync(i)); });
-        return streams;
+            async (i, _) => { bytes.Add(await LoadThumbnailImageAsync(i)); });
+        return bytes;
     }
 
-    public async Task<List<MemoryStream>> LoadOriginalImagesAsync(IEnumerable<Image> images)
+    public async Task<List<byte[]>> LoadOriginalImagesAsync(IEnumerable<Image> images)
     {
-        var streams = new List<MemoryStream>();
-        await Parallel.ForEachAsync(images, async (i, _) => { streams.Add(await LoadOriginalImageAsync(i)); });
-        return streams;
+        var bytes = new List<byte[]>();
+        await Parallel.ForEachAsync(images, async (i, _) => { bytes.Add(await LoadOriginalImageAsync(i)); });
+        return bytes;
     }
 
     public async Task<Dictionary<string, byte[]>> GetLikesAsync(long chatId) // 2 запроса
