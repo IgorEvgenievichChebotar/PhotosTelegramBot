@@ -85,7 +85,9 @@ public class YandexDiskService : IYandexDiskService
     public async Task<List<byte[]>> LoadOriginalImagesAsync(IEnumerable<Image> images)
     {
         var bytes = new List<byte[]>();
-        await Parallel.ForEachAsync(images, async (i, _) => { bytes.Add(await LoadOriginalImageAsync(i)); });
+        await Parallel.ForEachAsync(
+            images,
+            async (i, _) => { bytes.Add(await LoadOriginalImageAsync(i)); });
         return bytes;
     }
 
@@ -101,8 +103,6 @@ public class YandexDiskService : IYandexDiskService
 
     public async Task<Dictionary<string, byte[]>> LoadLikesAsync(long chatId)
     {
-        LikesCache[chatId] = new Dictionary<string, byte[]>();
-
         var urlFolderOnDisk = Secrets.GetUrlLikedImagesByChatIdOnDisk(chatId, limit: 10);
         var response = await _httpClient.GetAsync(urlFolderOnDisk);
         if (response.StatusCode == HttpStatusCode.NotFound) // папки нет
@@ -116,6 +116,8 @@ public class YandexDiskService : IYandexDiskService
                 new ImageExifConverter())
             .Where(i => i.Name.Contains(".jpg"))
             .Where(i => i.MimeType!.Contains("image/jpeg"));
+
+        LikesCache[chatId] = new Dictionary<string, byte[]>();
 
         await Parallel.ForEachAsync(
             images, async (i, _) => { LikesCache[chatId].Add(i.Name, (await LoadThumbnailImageAsync(i)).ToArray()); }
@@ -175,7 +177,11 @@ public class YandexDiskService : IYandexDiskService
 
         var bytes = (await LoadThumbnailImageAsync(img)).ToArray();
 
-        LikesCache[chatId].Add(img.Name, bytes);
+        var dict = await GetLikesAsync(chatId);
+        if (!dict.ContainsKey(img.Name))
+        {
+            dict.Add(img.Name, bytes);
+        }
     }
 
     public void DeleteImage(string imgName)

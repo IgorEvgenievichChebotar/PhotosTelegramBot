@@ -180,6 +180,16 @@ class Program
             return;
         }
 
+        if (settings.Query is not null)
+        {
+            /*var num = Convert.ToInt32(settings.Query) - 1;
+            var keyValuePairs = likes.TakeLast(10).ToList();
+            keyValuePairs.Reverse();
+            settings.Image = _service.GetImage(keyValuePairs[num].Key);
+            await SendPhotoAsync(settings);
+            return;*/
+        }
+
         var mediaPhotos = likes
             .Select(pair => new InputMediaPhoto(new InputMedia(new MemoryStream(pair.Value), pair.Key)));
 
@@ -280,32 +290,6 @@ class Program
 
     private static async Task FindAsync(Settings settings)
     {
-        static async Task SendPhotoAsync(Settings settings)
-        {
-            var img = settings.Image!;
-            await settings.Bot.SendPhotoAsync(
-                chatId: settings.ChatId,
-                caption: $"<a href=\"{Secrets.GetUrlOpenInBrowser + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
-                parseMode: ParseMode.Html,
-                photo: new MemoryStream(await _service.LoadThumbnailImageAsync(img))!,
-                replyMarkup: new InlineKeyboardMarkup(new[]
-                {
-                    InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}"),
-                    InlineKeyboardButton.WithCallbackData("🖤", $"/like {img.Name}"),
-                    InlineKeyboardButton.WithCallbackData("Удалить с диска", $"/delete {img.Name}"),
-                }),
-                cancellationToken: settings.CancellationToken,
-                disableNotification: true
-            );
-
-            var username = (settings.Update.Message is not null
-                ? settings.Update.Message.Chat.Username
-                : settings.Update.CallbackQuery!.From.Username)!;
-
-            Console.WriteLine(
-                $"{DateTime.Now} | Отправлено фото {img} пользователю {username}");
-        }
-
         if (settings.Query == null)
         {
             settings.Image = _service.GetRandomImage();
@@ -332,6 +316,31 @@ class Program
         await SendPhotoAsync(settings);
     }
 
+    static async Task SendPhotoAsync(Settings settings)
+    {
+        var img = settings.Image!;
+        await settings.Bot.SendPhotoAsync(
+            chatId: settings.ChatId,
+            caption: $"<a href=\"{Secrets.GetUrlOpenInBrowser + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
+            parseMode: ParseMode.Html,
+            photo: new MemoryStream(await _service.LoadThumbnailImageAsync(img))!,
+            replyMarkup: new InlineKeyboardMarkup(new[]
+            {
+                InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}"),
+                InlineKeyboardButton.WithCallbackData("🖤", $"/like {img.Name}"),
+                InlineKeyboardButton.WithCallbackData("Удалить с диска", $"/delete {img.Name}"),
+            }),
+            cancellationToken: settings.CancellationToken,
+            disableNotification: true
+        );
+
+        var username = (settings.Update.Message is not null
+            ? settings.Update.Message.Chat.Username
+            : settings.Update.CallbackQuery!.From.Username)!;
+
+        Console.WriteLine(
+            $"{DateTime.Now} | Отправлено фото {img} пользователю {username}");
+    }
 
     private static Task HandlePollingErrorAsync(Exception exception)
     {

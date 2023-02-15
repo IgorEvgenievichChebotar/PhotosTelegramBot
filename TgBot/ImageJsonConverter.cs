@@ -49,6 +49,6 @@ public class ImageExifConverter : JsonConverter<Image>
 
     public override void WriteJson(JsonWriter writer, Image value, JsonSerializer serializer)
     {
-        throw new NotImplementedException();
+        
     }
 }
