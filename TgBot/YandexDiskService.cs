@@ -21,6 +21,7 @@ public interface IYandexDiskService
     Task<List<byte[]>> LoadThumbnailImagesAsync(IEnumerable<Image> images);
     Task<List<byte[]>> LoadOriginalImagesAsync(IEnumerable<Image> images);
     Task<Dictionary<string, byte[]>> GetLikesAsync(long chatId);
+    Task<Dictionary<string, byte[]>> LoadLikesAsync(long chatId);
     Task<string> GetUrlToLikedImagesAsync(long chatId);
     Task<string> GetPublicFolderUrlByChatIdAsync(long chatId);
     void AddToLikes(long chatId, Image img);
@@ -95,9 +96,14 @@ public class YandexDiskService : IYandexDiskService
             return LikesCache[chatId];
         }
 
+        return await LoadLikesAsync(chatId);
+    }
+
+    public async Task<Dictionary<string, byte[]>> LoadLikesAsync(long chatId)
+    {
         LikesCache[chatId] = new Dictionary<string, byte[]>();
 
-        var urlFolderOnDisk = Secrets.GetUrlLikedImagesByChatIdOnDisk(chatId);
+        var urlFolderOnDisk = Secrets.GetUrlLikedImagesByChatIdOnDisk(chatId, limit: 10);
         var response = await _httpClient.GetAsync(urlFolderOnDisk);
         if (response.StatusCode == HttpStatusCode.NotFound) // папки нет
         {
@@ -158,16 +164,16 @@ public class YandexDiskService : IYandexDiskService
         return publicUrl;
     }
 
-    public void AddToLikes(long chatId, Image img)
+    public async void AddToLikes(long chatId, Image img)
     {
         var urlCopyImageToFolderOnDisk = Secrets.GetUrlCopyImageToFolderOnDisk(
             chatId: chatId,
             currentPath: "disk:/" + Secrets.TargetFolder + "/",
             imgName: img.Name);
 
-        _httpClient.PostAsync(urlCopyImageToFolderOnDisk, null);
+        var postAsync = _httpClient.PostAsync(urlCopyImageToFolderOnDisk, null);
 
-        var bytes = LoadThumbnailImageAsync(img).Result.ToArray();
+        var bytes = (await LoadThumbnailImageAsync(img)).ToArray();
 
         LikesCache[chatId].Add(img.Name, bytes);
     }

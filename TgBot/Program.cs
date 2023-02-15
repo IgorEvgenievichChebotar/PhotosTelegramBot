@@ -25,37 +25,12 @@ class Program
 
         using CancellationTokenSource cts = new();
 
-        ReceiverOptions receiverOptions = new()
-        {
-            AllowedUpdates = Array.Empty<UpdateType>() // receive all update types
-        };
-
         await _service.LoadImagesAsync();
 
         bot.StartReceiving(
-            updateHandler: async (botClient, update, cancellationToken) =>
-            {
-                try
-                {
-                    await HandleUpdateAsync(botClient, update, cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("Error occurred in HandleUpdateAsync: " + ex.Message);
-                }
-            },
-            pollingErrorHandler: async (_, exception, _) =>
-            {
-                try
-                {
-                    await HandlePollingErrorAsync(exception);
-                }
-                catch (Exception ex)
-                {
-                    Console.WriteLine("Error occurred in HandlePollingErrorAsync: " + ex.Message);
-                }
-            },
-            receiverOptions: receiverOptions,
+            updateHandler: UpdateHandler(),
+            pollingErrorHandler: PollingErrorHandler(),
+            receiverOptions: new ReceiverOptions { AllowedUpdates = Array.Empty<UpdateType>() },
             cancellationToken: cts.Token
         );
 
@@ -99,8 +74,6 @@ class Program
                     return;
                 }
 
-                #region msg commands
-
                 switch (settings.Cmd.ToLower())
                 {
                     case "/start":
@@ -121,7 +94,9 @@ class Program
                             text: "Выбери из списка",
                             replyMarkup: new InlineKeyboardMarkup(
                                 folders.Select(f => new[]
-                                    { InlineKeyboardButton.WithCallbackData(f.Name!, $"/changedir {f.Name}") })
+                                {
+                                    InlineKeyboardButton.WithCallbackData(f.Name!, $"/changedir {f.Name}")
+                                })
                             ),
                             cancellationToken: cts);
                         return;
@@ -134,8 +109,6 @@ class Program
                     default:
                         await FindAsync(settings);
                         return;
-
-                    #endregion
                 }
 
             case UpdateType.CallbackQuery:
@@ -147,8 +120,6 @@ class Program
                 {
                     settings.Query = data[(data.IndexOf(" ", StringComparison.Ordinal) + 1)..];
                 }
-
-                #region callback commands
 
                 switch (settings.Cmd)
                 {
@@ -177,8 +148,6 @@ class Program
                             text: $"{imgName} удалено.",
                             cancellationToken: settings.CancellationToken);
                         return;
-
-                    #endregion
                 }
 
                 return;
@@ -230,6 +199,8 @@ class Program
             cancellationToken: settings.CancellationToken,
             disableNotification: true
         );
+
+        var task = _service.LoadLikesAsync(settings.ChatId);
     }
 
     private static async Task StartAsync(Settings settings)
@@ -374,6 +345,36 @@ class Program
         Console.WriteLine(ErrorMessage);
 
         return Task.CompletedTask;
+    }
+
+    private static Func<ITelegramBotClient, Exception, CancellationToken, Task> PollingErrorHandler()
+    {
+        return async (_, exception, _) =>
+        {
+            try
+            {
+                await HandlePollingErrorAsync(exception);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error occurred in HandlePollingErrorAsync: " + ex.Message);
+            }
+        };
+    }
+
+    private static Func<ITelegramBotClient, Update, CancellationToken, Task> UpdateHandler()
+    {
+        return async (botClient, update, cancellationToken) =>
+        {
+            try
+            {
+                await HandleUpdateAsync(botClient, update, cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Error occurred in HandleUpdateAsync: " + ex.Message);
+            }
+        };
     }
 }
 
