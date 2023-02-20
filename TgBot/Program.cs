@@ -165,7 +165,7 @@ class Program
             text: "Фото скоро будет доступно в чате, можешь продолжать использовать бота.",
             cancellationToken: settings.CancellationToken
         );
-        
+
         var img = settings.Image!;
         var imgBytes = await _service.LoadOriginalImageAsync(img);
 
@@ -245,7 +245,7 @@ class Program
         settings.Image = _service.GetImage(settings.Query!);
 
         var url = await _service.GetPublicFolderUrlByChatIdAsync(settings.ChatId);
-        
+
         var task = _service.AddToLikes(settings.ChatId, settings.Image!);
 
         await settings.Bot.SendTextMessageAsync(
@@ -308,9 +308,10 @@ class Program
     {
         CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("de-DE");
 
+        settings.Image = _service.GetRandomImage();
+
         if (settings.Query == null)
         {
-            settings.Image = _service.GetRandomImage();
             await SendImageAsync(settings);
             return;
         }
@@ -323,13 +324,29 @@ class Program
                 DateTimeStyles.None,
                 out var date))
         {
-            settings.Image = _service.GetRandomImage(date);
-            await SendImageAsync(settings);
+            var img = _service.GetRandomImage(date);
+            if (img is null)
+            {
+                await settings.Bot.SendTextMessageAsync(
+                    chatId: settings.ChatId,
+                    text: $"На дату {date.Date} фотографий нет",
+                    replyMarkup: new InlineKeyboardMarkup(new[]
+                    {
+                        InlineKeyboardButton.WithCallbackData("День назад", $"/find {date.Date.AddDays(-1)}"),
+                        InlineKeyboardButton.WithCallbackData("День вперёд", $"/find {date.Date.AddDays(1)}"),
+                    }),
+                    cancellationToken: settings.CancellationToken);
+            }
+            else
+            {
+                settings.Image = img;
+                await SendImageAsync(settings);
+            }
+
             return;
         }
 
         settings.Image = _service.GetImage(settings.Query);
-
         await SendImageAsync(settings);
     }
 

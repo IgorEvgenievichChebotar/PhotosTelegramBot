@@ -9,7 +9,7 @@ namespace TgBot;
 public interface IYandexDiskService
 {
     Image GetRandomImage();
-    Image GetRandomImage(DateTime date);
+    Image? GetRandomImage(DateTime date);
     Image GetImage(string imgName);
     Image? FindImageByName(string imgName);
     void OpenImageInBrowser(string name);
@@ -201,11 +201,11 @@ public class YandexDiskService : IYandexDiskService
         return img;
     }
 
-    public Image GetRandomImage(DateTime date)
+    public Image? GetRandomImage(DateTime date)
     {
         var randomImage = ImagesCache
             .Where(i => i.DateTime.Date == date) //findAll был
-            .MinBy(_ => Guid.NewGuid()) ?? GetRandomImage();
+            .MinBy(_ => Guid.NewGuid());
         return randomImage;
     }
 
