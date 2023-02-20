@@ -24,7 +24,7 @@ public interface IYandexDiskService
     Task<Dictionary<string, byte[]>> LoadLikesAsync(long chatId);
     Task<string> GetUrlToLikedImagesAsync(long chatId);
     Task<string> GetPublicFolderUrlByChatIdAsync(long chatId);
-    void AddToLikes(long chatId, Image img);
+    Task AddToLikes(long chatId, Image img);
     void DeleteImage(string imgName);
 }
 
@@ -166,16 +166,16 @@ public class YandexDiskService : IYandexDiskService
         return publicUrl;
     }
 
-    public async void AddToLikes(long chatId, Image img)
+    public async Task AddToLikes(long chatId, Image img)
     {
         var urlCopyImageToFolderOnDisk = Secrets.GetUrlCopyImageToFolderOnDisk(
             chatId: chatId,
             currentPath: "disk:/" + Secrets.TargetFolder + "/",
             imgName: img.Name);
 
-        var postAsync = _httpClient.PostAsync(urlCopyImageToFolderOnDisk, null);
+        var task = _httpClient.PostAsync(urlCopyImageToFolderOnDisk, null);
 
-        var bytes = (await LoadThumbnailImageAsync(img)).ToArray();
+        var bytes = await LoadThumbnailImageAsync(img);
 
         var dict = await GetLikesAsync(chatId);
         if (!dict.ContainsKey(img.Name))

@@ -68,7 +68,7 @@ class Program
                 {
                     await bot.SendTextMessageAsync(
                         chatId: 421981741,
-                        text: $"{DateTime.Now} | {msg.Chat.FirstName} написала боту: {msgText}",
+                        text: $"{DateTime.Now} | {msg.Chat.FirstName} написал боту: {msgText}",
                         cancellationToken: cts);
                     await NoAccessAsync(settings);
                     return;
@@ -130,6 +130,10 @@ class Program
                         settings.Image = _service.GetImage(settings.Query!);
                         await LikeAsync(settings);
                         return;
+                    case "/download":
+                        settings.Image = _service.GetImage(settings.Query!);
+                        var task = DownloadImageAsync(settings);
+                        return;
                     case "/changedir":
                         await ChangeDirAsync(settings);
                         return;
@@ -154,15 +158,34 @@ class Program
         }
     }
 
+    private static async Task DownloadImageAsync(Settings settings)
+    {
+        var img = settings.Image!;
+        var imgBytes = await _service.LoadOriginalImageAsync(img);
+
+        await settings.Bot.SendTextMessageAsync(
+            chatId: settings.ChatId,
+            text: "Фото скоро будет доступно в чате, можешь продолжать использовать бота.",
+            cancellationToken: settings.CancellationToken
+        );
+
+        await settings.Bot.SendDocumentAsync(
+            chatId: settings.ChatId,
+            document: new InputMedia(new MemoryStream(imgBytes), img.Name),
+            cancellationToken: settings.CancellationToken);
+    }
+
     private static async Task DeleteAsync(Settings settings)
     {
+        var img = settings.Image!;
+
         await settings.Bot.SendPhotoAsync(
             chatId: settings.ChatId,
-            photo: new MemoryStream(await _service.LoadThumbnailImageAsync(settings.Image!))!,
-            caption: $"Точно удалить {settings.Image!.Name}?",
+            photo: new MemoryStream(await _service.LoadThumbnailImageAsync(img))!,
+            caption: $"Точно удалить {img.Name}?",
             parseMode: ParseMode.Html,
             replyMarkup: new InlineKeyboardMarkup(
-                InlineKeyboardButton.WithCallbackData("да", $"/confirmDelete {settings.Image.Name}")
+                InlineKeyboardButton.WithCallbackData("да", $"/confirmDelete {img.Name}")
             )
         );
     }
@@ -178,16 +201,6 @@ class Program
                 text: "Список избранных пуст",
                 cancellationToken: settings.CancellationToken);
             return;
-        }
-
-        if (settings.Query is not null)
-        {
-            /*var num = Convert.ToInt32(settings.Query) - 1;
-            var keyValuePairs = likes.TakeLast(10).ToList();
-            keyValuePairs.Reverse();
-            settings.Image = _service.GetImage(keyValuePairs[num].Key);
-            await SendPhotoAsync(settings);
-            return;*/
         }
 
         var mediaPhotos = likes
@@ -232,7 +245,8 @@ class Program
         settings.Image = _service.GetImage(settings.Query!);
 
         var url = await _service.GetPublicFolderUrlByChatIdAsync(settings.ChatId);
-        _service.AddToLikes(settings.ChatId, settings.Image!);
+        
+        var task = _service.AddToLikes(settings.ChatId, settings.Image!);
 
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
@@ -281,6 +295,8 @@ class Program
                   "/changedir <имя> - сменить папку.\n" +
                   "/like <имя> - добавить фотку в избранные.\n" +
                   "/likes - избранные фотки.\n" +
+                  "/openlikes - получить ссылку на лайкнутые фотки на диске.\n" +
+                  "/delete - удалить фотку с диска.\n" +
                   "/help - доступные команды.\n" +
                   "/start - начало работы бота.\n",
             cancellationToken: settings.CancellationToken,
@@ -290,15 +306,16 @@ class Program
 
     private static async Task FindAsync(Settings settings)
     {
+        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("de-DE");
+
         if (settings.Query == null)
         {
             settings.Image = _service.GetRandomImage();
-            await SendPhotoAsync(settings);
+            await SendImageAsync(settings);
             return;
         }
 
         var dateString = settings.Query.Split(" ")[0];
-        CultureInfo.DefaultThreadCurrentCulture = CultureInfo.GetCultureInfo("de-DE");
         if (DateTime.TryParseExact(
                 dateString,
                 "dd.MM.yyyy",
@@ -307,16 +324,16 @@ class Program
                 out var date))
         {
             settings.Image = _service.GetRandomImage(date);
-            await SendPhotoAsync(settings);
+            await SendImageAsync(settings);
             return;
         }
 
         settings.Image = _service.GetImage(settings.Query);
 
-        await SendPhotoAsync(settings);
+        await SendImageAsync(settings);
     }
 
-    static async Task SendPhotoAsync(Settings settings)
+    static async Task SendImageAsync(Settings settings)
     {
         var img = settings.Image!;
         await settings.Bot.SendPhotoAsync(
@@ -326,9 +343,18 @@ class Program
             photo: new MemoryStream(await _service.LoadThumbnailImageAsync(img))!,
             replyMarkup: new InlineKeyboardMarkup(new[]
             {
-                InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}"),
-                InlineKeyboardButton.WithCallbackData("🖤", $"/like {img.Name}"),
-                InlineKeyboardButton.WithCallbackData("Удалить с диска", $"/delete {img.Name}"),
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("Удалить", $"/delete {img.Name}"),
+                    InlineKeyboardButton.WithCallbackData("🖤", $"/like {img.Name}"),
+                    InlineKeyboardButton.WithCallbackData("Скачать", $"/download {img.Name}"),
+                },
+                new[]
+                {
+                    InlineKeyboardButton.WithCallbackData("Предыдущий день", $"/find {img.DateTime.Date.AddDays(-1)}"),
+                    InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}"),
+                    InlineKeyboardButton.WithCallbackData("Следующий день", $"/find {img.DateTime.Date.AddDays(1)}"),
+                }
             }),
             cancellationToken: settings.CancellationToken,
             disableNotification: true
