@@ -160,14 +160,14 @@ class Program
 
     private static async Task DownloadImageAsync(Settings settings)
     {
-        var img = settings.Image!;
-        var imgBytes = await _service.LoadOriginalImageAsync(img);
-
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
             text: "Фото скоро будет доступно в чате, можешь продолжать использовать бота.",
             cancellationToken: settings.CancellationToken
         );
+        
+        var img = settings.Image!;
+        var imgBytes = await _service.LoadOriginalImageAsync(img);
 
         await settings.Bot.SendDocumentAsync(
             chatId: settings.ChatId,
@@ -347,7 +347,7 @@ class Program
                 {
                     InlineKeyboardButton.WithCallbackData("Удалить", $"/delete {img.Name}"),
                     InlineKeyboardButton.WithCallbackData("🖤", $"/like {img.Name}"),
-                    InlineKeyboardButton.WithCallbackData("Скачать", $"/download {img.Name}"),
+                    /*InlineKeyboardButton.WithCallbackData("Скачать", $"/download {img.Name}"),*/
                 },
                 new[]
                 {
