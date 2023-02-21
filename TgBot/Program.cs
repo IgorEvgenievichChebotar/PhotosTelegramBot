@@ -53,6 +53,13 @@ class Program
             case UpdateType.Message:
                 if (update.Message is not { Text: { } } msg) return;
 
+                if (msg.Chat.Username != $"{Secrets.MyUsername}")
+                {
+                    Secrets.TargetFolder = "PublicPhotos";
+                    _service.DeleteAllImagesFromCache();
+                    await _service.LoadImagesAsync();
+                }
+
                 var msgText = msg.Text;
                 var chatId = msg.Chat.Id;
 
@@ -62,16 +69,6 @@ class Program
                 if (msgText.Split(" ").Length > 1)
                 {
                     settings.Query = msgText[(msgText.IndexOf(" ", StringComparison.Ordinal) + 1)..];
-                }
-
-                if (msg.Chat.Username != $"{Secrets.MyUsername}")
-                {
-                    await bot.SendTextMessageAsync(
-                        chatId: 421981741,
-                        text: $"{DateTime.Now} | {msg.Chat.FirstName} написал боту: {msgText}",
-                        cancellationToken: cts);
-                    await NoAccessAsync(settings);
-                    return;
                 }
 
                 switch (settings.Cmd.ToLower())
@@ -88,6 +85,12 @@ class Program
                         await FindAsync(settings);
                         return;
                     case "сменить":
+                        if (msg.Chat.Username != $"{Secrets.MyUsername}")
+                        {
+                            await NoAccessAsync(settings);
+                            return;
+                        }
+
                         var folders = await _service.GetFoldersAsync();
                         await bot.SendTextMessageAsync(
                             chatId: chatId,
@@ -121,6 +124,7 @@ class Program
                     settings.Query = data[(data.IndexOf(" ", StringComparison.Ordinal) + 1)..];
                 }
 
+                var username = update.CallbackQuery.From.Username;
                 switch (settings.Cmd)
                 {
                     case "/find":
@@ -135,16 +139,34 @@ class Program
                         var task = DownloadImageAsync(settings);
                         return;
                     case "/changedir":
+                        if (username != $"{Secrets.MyUsername}")
+                        {
+                            await NoAccessAsync(settings);
+                            return;
+                        }
+
                         await ChangeDirAsync(settings);
                         return;
                     case "/openlikes":
                         await GetLikesAsync(settings);
                         return;
                     case "/delete":
+                        if (username != $"{Secrets.MyUsername}")
+                        {
+                            await NoAccessAsync(settings);
+                            return;
+                        }
+
                         settings.Image = _service.GetImage(settings.Query!);
                         await DeleteAsync(settings);
                         return;
                     case "/confirmDelete":
+                        if (username != $"{Secrets.MyUsername}")
+                        {
+                            await NoAccessAsync(settings);
+                            return;
+                        }
+
                         var imgName = settings.Query!;
                         _service.DeleteImage(imgName);
                         await settings.Bot.SendTextMessageAsync(
@@ -276,8 +298,6 @@ class Program
 
     private static async Task NoAccessAsync(Settings settings)
     {
-        var msg = settings.Update.Message!;
-        Console.WriteLine($"{DateTime.Now} | {msg.Chat.FirstName} написала боту: {msg}");
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
             text: "Нет доступа",

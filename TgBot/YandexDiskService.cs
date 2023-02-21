@@ -26,6 +26,7 @@ public interface IYandexDiskService
     Task<string> GetPublicFolderUrlByChatIdAsync(long chatId);
     Task AddToLikes(long chatId, Image img);
     void DeleteImage(string imgName);
+    void DeleteAllImagesFromCache();
 }
 
 public class YandexDiskService : IYandexDiskService
@@ -190,6 +191,12 @@ public class YandexDiskService : IYandexDiskService
         _httpClient.DeleteAsync(url);
         var image = ImagesCache.Find(i => i.Name == imgName);
         ImagesCache.Remove(image!);
+    }
+
+    public void DeleteAllImagesFromCache()
+    {
+        ImagesCache.RemoveAll(i => i.ParentFolder!.Name != Secrets.TargetFolder);
+        Console.WriteLine("удалены все фотки, текущее кол-во: " + ImagesCache.Count);
     }
 
     public Image GetRandomImage()
