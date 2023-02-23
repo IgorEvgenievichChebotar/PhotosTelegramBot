@@ -1,4 +1,6 @@
-﻿namespace TgBot;
+﻿using Newtonsoft.Json;
+
+namespace TgBot;
 
 public class Folder
 {
@@ -6,6 +8,7 @@ public class Folder
 
     public string? Type { get; set; }
     public string? Path { get; set; }
+    
 
     public Folder()
     {

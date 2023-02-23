@@ -39,12 +39,12 @@ class Program
     }
 
     private static async Task HandleUpdateAsync(ITelegramBotClient bot, Update update,
-        CancellationToken cts)
+        CancellationToken token)
     {
         var settings = new Settings
         (
             bot: bot,
-            cancellationToken: cts,
+            cancellationToken: token,
             update: update
         );
 
@@ -101,7 +101,7 @@ class Program
                                     InlineKeyboardButton.WithCallbackData(f.Name!, $"/changedir {f.Name}")
                                 })
                             ),
-                            cancellationToken: cts);
+                            cancellationToken: token);
                         return;
                     case "/like":
                         await LikeAsync(settings);
@@ -349,7 +349,7 @@ class Program
             {
                 await settings.Bot.SendTextMessageAsync(
                     chatId: settings.ChatId,
-                    text: $"На дату {date.Date} фотографий нет",
+                    text: $"На дату {date.ToShortDateString()} фотографий нет",
                     replyMarkup: new InlineKeyboardMarkup(new[]
                     {
                         InlineKeyboardButton.WithCallbackData("День назад", $"/find {date.Date.AddDays(-1)}"),
@@ -375,7 +375,7 @@ class Program
         var img = settings.Image!;
         await settings.Bot.SendPhotoAsync(
             chatId: settings.ChatId,
-            caption: $"<a href=\"{Secrets.GetUrlOpenInBrowser + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
+            caption: $"<a href=\"{Secrets.OpenInBrowserUrl + img.Name}\">{img.Name}</a><b> {img.DateTime}</b>",
             parseMode: ParseMode.Html,
             photo: new MemoryStream(await _service.LoadThumbnailImageAsync(img))!,
             replyMarkup: new InlineKeyboardMarkup(new[]
@@ -388,9 +388,12 @@ class Program
                 },
                 new[]
                 {
-                    InlineKeyboardButton.WithCallbackData("Предыдущий день", $"/find {img.DateTime.Date.AddDays(-1)}"),
-                    InlineKeyboardButton.WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}"),
-                    InlineKeyboardButton.WithCallbackData("Следующий день", $"/find {img.DateTime.Date.AddDays(1)}"),
+                    InlineKeyboardButton
+                        .WithCallbackData("Предыдущий день", $"/find {img.DateTime.Date.AddDays(-1)}"),
+                    InlineKeyboardButton
+                        .WithCallbackData("Ещё за эту дату", $"/find {img.DateTime.Date}"),
+                    InlineKeyboardButton
+                        .WithCallbackData("Следующий день", $"/find {img.DateTime.Date.AddDays(1)}"),
                 }
             }),
             cancellationToken: settings.CancellationToken,

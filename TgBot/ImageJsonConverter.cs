@@ -13,9 +13,10 @@ public class ImageExifConverter : JsonConverter<Image>
         JsonSerializer serializer)
     {
         var jo = JObject.Load(reader);
-        if ((string)jo["type"] == "dir")
+        if ((string)jo["type"] != "file")
         {
-            return null;
+            Console.WriteLine("Не фотка!");
+            return new Image();
         }
         var img = new Image();
         try
