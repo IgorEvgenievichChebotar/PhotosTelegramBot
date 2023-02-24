@@ -230,12 +230,12 @@ class Program
 
         await settings.Bot.SendMediaGroupAsync(
             chatId: settings.ChatId,
-            media: mediaPhotos.TakeLast(10).Reverse(),
+            media: mediaPhotos.Take(10),
             cancellationToken: settings.CancellationToken,
             disableNotification: true
         );
 
-        var urlToLikedImages = _service.GetUrlToLikedImagesAsync(chatId: settings.ChatId);
+        var urlToLikedImages = _service.GetPublicFolderUrlByChatIdAsync(chatId: settings.ChatId);
 
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,

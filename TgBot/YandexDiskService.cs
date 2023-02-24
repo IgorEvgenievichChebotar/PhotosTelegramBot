@@ -1,8 +1,8 @@
 ﻿using System.Diagnostics;
 using System.Net;
 using System.Text.Json;
-using Newtonsoft.Json;
 using Flurl.Http;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace TgBot;
@@ -12,18 +12,13 @@ public interface IYandexDiskService
     Image GetRandomImage();
     Image? GetRandomImage(DateTime date);
     Image GetImage(string imgName);
-    Image? FindImageByName(string imgName);
     void OpenImageInBrowser(string name);
-    List<Image> GetImagesByDate(DateTime date);
     Task<List<Folder>> GetFoldersAsync();
     Task LoadImagesAsync();
     Task<byte[]> LoadThumbnailImageAsync(Image img);
     Task<byte[]> LoadOriginalImageAsync(Image img);
-    Task<List<byte[]>> LoadThumbnailImagesAsync(IEnumerable<Image> images);
-    Task<List<byte[]>> LoadOriginalImagesAsync(IEnumerable<Image> images);
     Task<Dictionary<string, byte[]>> GetLikesAsync(long chatId);
     Task<Dictionary<string, byte[]>> LoadLikesAsync(long chatId);
-    Task<string> GetUrlToLikedImagesAsync(long chatId);
     Task<string> GetPublicFolderUrlByChatIdAsync(long chatId);
     Task AddToLikes(long chatId, Image img);
     void DeleteImage(string imgName);
@@ -72,24 +67,6 @@ public class YandexDiskService : IYandexDiskService
         return content;
     }
 
-    public async Task<List<byte[]>> LoadThumbnailImagesAsync(IEnumerable<Image> images)
-    {
-        var bytes = new List<byte[]>();
-        await Parallel.ForEachAsync(
-            images,
-            async (i, _) => { bytes.Add(await LoadThumbnailImageAsync(i)); });
-        return bytes;
-    }
-
-    public async Task<List<byte[]>> LoadOriginalImagesAsync(IEnumerable<Image> images)
-    {
-        var bytes = new List<byte[]>();
-        await Parallel.ForEachAsync(
-            images,
-            async (i, _) => { bytes.Add(await LoadOriginalImageAsync(i)); });
-        return bytes;
-    }
-
     public async Task<Dictionary<string, byte[]>> GetLikesAsync(long chatId) // 2 запроса
     {
         if (LikesCache.ContainsKey(chatId))
@@ -125,19 +102,14 @@ public class YandexDiskService : IYandexDiskService
         return LikesCache[chatId];
     }
 
-    public async Task<string> GetUrlToLikedImagesAsync(long chatId)
-    {
-        return await GetPublicFolderUrlByChatIdAsync(chatId);
-    }
-
-    public async Task<string> GetPublicFolderUrlByChatIdAsync(long chatId) // 0-3 запроса
+    public async Task<string> GetPublicFolderUrlByChatIdAsync(long chatId)
     {
         var createFolderUrl = Secrets.FolderByChatIdUrl(chatId);
         var publishFolderUrl = Secrets.PublishFolderUrl(chatId);
 
         string publicUrl;
-        var getFolderIfExists = await _httpClient.GetAsync(createFolderUrl);
-        if (getFolderIfExists.StatusCode == HttpStatusCode.NotFound)
+        var folderResponse = await _httpClient.GetAsync(createFolderUrl);
+        if (folderResponse.StatusCode == HttpStatusCode.NotFound)
         {
             var createdFolderResponse = await _httpClient.PutAsync(createFolderUrl, null); //создаем
             var publishedFolderResponse = await _httpClient.PutAsync(publishFolderUrl, null); //публикуем
@@ -150,18 +122,17 @@ public class YandexDiskService : IYandexDiskService
                 publicUrl = json.RootElement.GetProperty("public_url").GetString()!;
                 Console.WriteLine($"{DateTime.Now} | Successful CreatePublicFolderByChatId: " +
                                   $"{response.StatusCode} {response.ReasonPhrase}");
-                return publicUrl;
             }
 
             Console.WriteLine($"{DateTime.Now} | Error CreatePublicFolderByChatId: " +
                               $"{createdFolderResponse.StatusCode} {publishedFolderResponse.ReasonPhrase}");
         }
 
-        var existingFolderRequest = await getFolderIfExists.Content.ReadAsStringAsync();
+        var existingFolderRequest = await folderResponse.Content.ReadAsStringAsync();
         var jsonDocument = JsonDocument.Parse(existingFolderRequest);
         publicUrl = jsonDocument.RootElement.GetProperty("public_url").GetString()!;
         Console.WriteLine($"{DateTime.Now} | Successful CreatePublicFolderByChatId: " +
-                          $"{getFolderIfExists.StatusCode} {getFolderIfExists.ReasonPhrase}");
+                          $"{folderResponse.StatusCode} {folderResponse.ReasonPhrase}");
         return publicUrl;
     }
 
@@ -253,7 +224,6 @@ public class YandexDiskService : IYandexDiskService
         await LoadCacheImages();
         var task = LoadRemainingImages();
 
-
         async Task LoadCacheImages()
         {
             var response = await _httpClient.GetAsync(Secrets.ImagesUrl(limit: Secrets.CacheCount));
@@ -278,13 +248,15 @@ public class YandexDiskService : IYandexDiskService
                     offset: offset)));
             }
 
+            var before = Images.Count;
+            var timer = Stopwatch.StartNew();
             await Parallel.ForEachAsync(tasks, async (t, _) =>
-            {
-                var imagesCount = await LoadAndAddImages(await t);
-                Console.WriteLine(
-                    $"{DateTime.Now} | {imagesCount} фоток загружено из папки {Secrets.TargetFolder}. " +
-                    $"Всего: {Images.Count}");
-            });
+                await LoadAndAddImages(await t)
+            );
+            Console.WriteLine(
+                $"{DateTime.Now} | {Images.Count - before} оставшихся фоток загружено " +
+                $"из папки {Secrets.TargetFolder} за {timer.ElapsedMilliseconds}мс. " +
+                $"Всего: {Images.Count}");
         }
 
         async Task<int> LoadAndAddImages(HttpResponseMessage response)
