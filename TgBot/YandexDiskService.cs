@@ -11,7 +11,7 @@ public interface IYandexDiskService
 {
     Image GetRandomImage();
     Image? GetRandomImage(DateTime date);
-    Image GetImage(string imgName);
+    Image? FindImageByName(string imgName);
     void OpenImageInBrowser(string name);
     Task<List<Folder>> GetFoldersAsync();
     Task LoadImagesAsync();
@@ -183,12 +183,6 @@ public class YandexDiskService : IYandexDiskService
             .Where(i => i.DateTime.Date == date)
             .MinBy(_ => Guid.NewGuid());
         return randomImage;
-    }
-
-    public Image GetImage(string imgName)
-    {
-        var img = FindImageByName(imgName);
-        return img ?? GetRandomImage();
     }
 
     public Image? FindImageByName(string imgName)

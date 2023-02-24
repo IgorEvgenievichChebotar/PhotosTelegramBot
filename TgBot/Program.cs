@@ -76,7 +76,7 @@ class Program
                     case "/start":
                         await StartAsync(settings);
                         await HelpAsync(settings);
-                        await _service.GetLikesAsync(settings.ChatId);
+                        var task = _service.GetLikesAsync(settings.ChatId);
                         return;
                     case "/help":
                         await HelpAsync(settings);
@@ -91,17 +91,7 @@ class Program
                             return;
                         }
 
-                        var folders = await _service.GetFoldersAsync();
-                        await bot.SendTextMessageAsync(
-                            chatId: chatId,
-                            text: "Выбери из списка",
-                            replyMarkup: new InlineKeyboardMarkup(
-                                folders.Select(f => new[]
-                                {
-                                    InlineKeyboardButton.WithCallbackData(f.Name!, $"/changedir {f.Name}")
-                                })
-                            ),
-                            cancellationToken: token);
+                        await ChangeFolderAsync(settings);
                         return;
                     case "/like":
                         await LikeAsync(settings);
@@ -115,6 +105,13 @@ class Program
                 }
 
             case UpdateType.CallbackQuery:
+                if (update.CallbackQuery!.From.Username != $"{Secrets.MyUsername}")
+                {
+                    Secrets.TargetFolder = "PublicPhotos";
+                    _service.DeleteAllImagesFromCache();
+                    await _service.LoadImagesAsync();
+                }
+
                 var data = update.CallbackQuery!.Data;
                 settings.Query = data!.Split(" ")[1];
                 settings.Cmd = data.Split(" ")[0];
@@ -131,11 +128,9 @@ class Program
                         await FindAsync(settings);
                         return;
                     case "/like":
-                        settings.Image = _service.GetImage(settings.Query!);
                         await LikeAsync(settings);
                         return;
                     case "/download":
-                        settings.Image = _service.GetImage(settings.Query!);
                         var task = DownloadImageAsync(settings);
                         return;
                     case "/changedir":
@@ -145,7 +140,7 @@ class Program
                             return;
                         }
 
-                        await ChangeDirAsync(settings);
+                        await ConfirmChangeFolderAsync(settings);
                         return;
                     case "/openlikes":
                         await GetLikesAsync(settings);
@@ -157,7 +152,6 @@ class Program
                             return;
                         }
 
-                        settings.Image = _service.GetImage(settings.Query!);
                         await DeleteAsync(settings);
                         return;
                     case "/confirmDelete":
@@ -167,12 +161,7 @@ class Program
                             return;
                         }
 
-                        var imgName = settings.Query!;
-                        _service.DeleteImage(imgName);
-                        await settings.Bot.SendTextMessageAsync(
-                            chatId: settings.ChatId,
-                            text: $"{imgName} удалено.",
-                            cancellationToken: settings.CancellationToken);
+                        await ConfirmDeleteAsync(settings);
                         return;
                 }
 
@@ -180,15 +169,47 @@ class Program
         }
     }
 
+    private static async Task ChangeFolderAsync(Settings settings)
+    {
+        var folders = await _service.GetFoldersAsync();
+        await settings.Bot.SendTextMessageAsync(
+            chatId: settings.ChatId,
+            text: "Выбери из списка",
+            replyMarkup: new InlineKeyboardMarkup(
+                folders.Select(f => new[]
+                {
+                    InlineKeyboardButton.WithCallbackData(f.Name!, $"/changedir {f.Name}")
+                })
+            ),
+            cancellationToken: settings.CancellationToken);
+    }
+
+    private static async Task ConfirmDeleteAsync(Settings settings)
+    {
+        var imgName = settings.Query!;
+        _service.DeleteImage(imgName);
+        await settings.Bot.SendTextMessageAsync(
+            chatId: settings.ChatId,
+            text: $"{imgName} удалено.",
+            cancellationToken: settings.CancellationToken);
+    }
+
     private static async Task DownloadImageAsync(Settings settings)
     {
+        var imgName = settings.Query!;
+        settings.Image = _service.FindImageByName(imgName);
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
             text: "Фото скоро будет доступно в чате, можешь продолжать использовать бота.",
             cancellationToken: settings.CancellationToken
         );
 
-        var img = settings.Image!;
+        var img = settings.Image;
+        if (img is null)
+        {
+            await ImgNotFoundAsync(settings, imgName);
+            return;
+        }
         var imgBytes = await _service.LoadOriginalImageAsync(img);
 
         await settings.Bot.SendDocumentAsync(
@@ -199,8 +220,14 @@ class Program
 
     private static async Task DeleteAsync(Settings settings)
     {
-        var img = settings.Image!;
-
+        var imgName = settings.Query!;
+        settings.Image = _service.FindImageByName(imgName);
+        var img = settings.Image;
+        if (img is null)
+        {
+            await ImgNotFoundAsync(settings, imgName);
+            return;
+        }
         await settings.Bot.SendPhotoAsync(
             chatId: settings.ChatId,
             photo: new MemoryStream(await _service.LoadThumbnailImageAsync(img))!,
@@ -210,6 +237,15 @@ class Program
                 InlineKeyboardButton.WithCallbackData("да", $"/confirmDelete {img.Name}")
             )
         );
+    }
+
+    private static async Task ImgNotFoundAsync(Settings settings, string imgName)
+    {
+        await settings.Bot.SendTextMessageAsync(
+            chatId: settings.ChatId,
+            text: $"Фотография {imgName} не найдена.",
+            cancellationToken: settings.CancellationToken);
+        return;
     }
 
     private static async Task GetLikesAsync(Settings settings)
@@ -264,11 +300,18 @@ class Program
 
     private static async Task LikeAsync(Settings settings)
     {
-        settings.Image = _service.GetImage(settings.Query!);
+        var imgName = settings.Query!;
+        settings.Image = _service.FindImageByName(imgName);
+        
+        if (settings.Image is null)
+        {
+            await ImgNotFoundAsync(settings, imgName);
+            return;
+        }
 
         var url = await _service.GetPublicFolderUrlByChatIdAsync(settings.ChatId);
 
-        var task = _service.AddToLikes(settings.ChatId, settings.Image!);
+        var task = _service.AddToLikes(settings.ChatId, settings.Image);
 
         await settings.Bot.SendTextMessageAsync(
             chatId: settings.ChatId,
@@ -279,7 +322,7 @@ class Program
             disableNotification: true);
     }
 
-    private static async Task ChangeDirAsync(Settings settings)
+    private static async Task ConfirmChangeFolderAsync(Settings settings)
     {
         var parentFolder = settings.Query!;
         if (Secrets.TargetFolder != parentFolder)
@@ -366,7 +409,12 @@ class Program
             return;
         }
 
-        settings.Image = _service.GetImage(settings.Query);
+        settings.Image = _service.FindImageByName(settings.Query);
+        if (settings.Image is null)
+        {
+            await ImgNotFoundAsync(settings, settings.Query);
+            return;
+        }
         await SendImageAsync(settings);
     }
 
