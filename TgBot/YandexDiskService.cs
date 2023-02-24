@@ -23,6 +23,8 @@ public interface IYandexDiskService
     Task AddToLikes(long chatId, Image img);
     void DeleteImage(string imgName);
     void DeleteAllImagesFromCache();
+    DateTime FindClosestDateBefore(DateTime date);
+    DateTime FindClosestDateAfter(DateTime date);
 }
 
 public class YandexDiskService : IYandexDiskService
@@ -88,18 +90,24 @@ public class YandexDiskService : IYandexDiskService
         }
 
         var jsonString = await response.Content.ReadAsStringAsync();
-        var images = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2],
-                new ImageExifConverter())
-            .Where(i => i.Name.Contains(".jpg"))
-            .Where(i => i.MimeType.Contains("image/jpeg"));
+        var images = DeserializeImagesFromJsonString(jsonString);
 
         LikesCache[chatId] = new Dictionary<string, byte[]>();
 
-        await Parallel.ForEachAsync(
-            images, async (i, _) => { LikesCache[chatId].Add(i.Name, (await LoadThumbnailImageAsync(i)).ToArray()); }
+        await Parallel.ForEachAsync(images, async (i, _) =>
+            LikesCache[chatId].Add(i.Name, (await LoadThumbnailImageAsync(i)))
         );
 
         return LikesCache[chatId];
+    }
+
+    private static List<Image> DeserializeImagesFromJsonString(string jsonString)
+    {
+        return JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2],
+                new ImageExifConverter())
+            .Where(i => i.Name.Contains(".jpg"))
+            .Where(i => i.MimeType.Contains("image/jpeg"))
+            .ToList();
     }
 
     public async Task<string> GetPublicFolderUrlByChatIdAsync(long chatId)
@@ -168,6 +176,51 @@ public class YandexDiskService : IYandexDiskService
         Console.WriteLine("удалены все фотки, текущее кол-во: " + Images.Count);
     }
 
+    public DateTime FindClosestDateBefore(DateTime date)
+    {
+        var closestDate = DateTime.MinValue;
+        var closestDiff = TimeSpan.MaxValue;
+
+        foreach (var image in Images)
+        {
+            if (image.DateTime <= date && date - image.DateTime < closestDiff)
+            {
+                closestDiff = date - image.DateTime;
+                closestDate = image.DateTime;
+            }
+        }
+
+        if (closestDate == DateTime.MinValue)
+        {
+            closestDate = Images.Min(image => image.DateTime);
+        }
+
+        return closestDate;
+    }
+
+    public DateTime FindClosestDateAfter(DateTime date)
+    {
+        var closestDate = DateTime.MaxValue;
+        var closestDiff = TimeSpan.MaxValue;
+
+        foreach (var image in Images)
+        {
+            if (image.DateTime >= date && image.DateTime - date < closestDiff)
+            {
+                closestDiff = image.DateTime - date;
+                closestDate = image.DateTime;
+            }
+        }
+
+        if (closestDate == DateTime.MaxValue)
+        {
+            closestDate = Images.Max(image => image.DateTime);
+        }
+
+        return closestDate;
+    }
+
+
     public Image GetRandomImage()
     {
         var img = Images
@@ -197,12 +250,17 @@ public class YandexDiskService : IYandexDiskService
         var url = Secrets.FoldersUrl();
         var response = await _httpClient.GetAsync(url);
         var jsonString = await response.Content.ReadAsStringAsync();
-        var folders = JsonConvert.DeserializeObject<ICollection<Folder>>(
+        var folders = DeserializeFoldersFromJsonString(jsonString);
+        return folders;
+    }
+
+    private static List<Folder> DeserializeFoldersFromJsonString(string jsonString)
+    {
+        return JsonConvert.DeserializeObject<List<Folder>>(
                 jsonString[22..^2],
                 new FolderJsonConverter())
             .Where(pf => pf.Type == "dir")
             .ToList();
-        return folders;
     }
 
     public async Task LoadImagesAsync()
@@ -258,11 +316,7 @@ public class YandexDiskService : IYandexDiskService
             var images = new List<Image>();
             var jsonString = await response.Content.ReadAsStringAsync();
             if (!jsonString.Contains("image/jpeg")) return images.Count;
-            images = JsonConvert.DeserializeObject<List<Image>>(jsonString[22..^2],
-                    new ImageExifConverter())
-                .Where(i => i.Name.Contains(".jpg"))
-                .Where(i => i.MimeType.Contains("image/jpeg"))
-                .ToList();
+            images = DeserializeImagesFromJsonString(jsonString);
             Images.AddRange(images);
             Images.RemoveAll(i => i is null);
 

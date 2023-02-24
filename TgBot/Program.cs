@@ -400,13 +400,19 @@ class Program
             var img = _service.GetRandomImage(date);
             if (img is null)
             {
+                var dateBefore = _service.FindClosestDateBefore(date);
+                var dateAfter = _service.FindClosestDateAfter(date);
+
                 await settings.Bot.SendTextMessageAsync(
                     chatId: settings.ChatId,
-                    text: $"На дату {date.ToShortDateString()} фотографий нет",
+                    text: $"На дату {date.ToShortDateString()} фотографий нет. " +
+                          $"Можешь посмотреть фотки на ближайшие даты в прошлом и в будущем.",
                     replyMarkup: new InlineKeyboardMarkup(new[]
                     {
-                        InlineKeyboardButton.WithCallbackData("День назад", $"/find {date.Date.AddDays(-1)}"),
-                        InlineKeyboardButton.WithCallbackData("День вперёд", $"/find {date.Date.AddDays(1)}"),
+                        InlineKeyboardButton.WithCallbackData(dateBefore.ToShortDateString(),
+                            $"/find {dateBefore}"),
+                        InlineKeyboardButton.WithCallbackData(dateAfter.ToShortDateString(),
+                            $"/find {dateAfter}"),
                     }),
                     cancellationToken: settings.CancellationToken);
             }
