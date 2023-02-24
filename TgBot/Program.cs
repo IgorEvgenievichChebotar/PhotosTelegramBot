@@ -126,13 +126,13 @@ class Program
                 {
                     case "/find":
                         await FindAsync(settings);
-                        return;
+                        break;
                     case "/like":
                         await LikeAsync(settings);
-                        return;
+                        break;
                     case "/download":
                         var task = DownloadImageAsync(settings);
-                        return;
+                        break;
                     case "/changedir":
                         if (username != $"{Secrets.MyUsername}")
                         {
@@ -141,10 +141,11 @@ class Program
                         }
 
                         await ConfirmChangeFolderAsync(settings);
-                        return;
+                        break;
                     case "/openlikes":
                         await GetLikesAsync(settings);
-                        return;
+
+                        break;
                     case "/delete":
                         if (username != $"{Secrets.MyUsername}")
                         {
@@ -153,7 +154,7 @@ class Program
                         }
 
                         await DeleteAsync(settings);
-                        return;
+                        break;
                     case "/confirmDelete":
                         if (username != $"{Secrets.MyUsername}")
                         {
@@ -162,9 +163,12 @@ class Program
                         }
 
                         await ConfirmDeleteAsync(settings);
-                        return;
+                        break;
                 }
 
+                await settings.Bot.AnswerCallbackQueryAsync(
+                    callbackQueryId: settings.Update.CallbackQuery!.Id,
+                    cancellationToken: settings.CancellationToken);
                 return;
         }
     }
@@ -192,6 +196,10 @@ class Program
             chatId: settings.ChatId,
             text: $"{imgName} удалено.",
             cancellationToken: settings.CancellationToken);
+        await settings.Bot.DeleteMessageAsync(
+            chatId: settings.ChatId,
+            messageId: settings.Update.CallbackQuery!.Message!.MessageId,
+            cancellationToken: settings.CancellationToken);
     }
 
     private static async Task DownloadImageAsync(Settings settings)
@@ -210,6 +218,7 @@ class Program
             await ImgNotFoundAsync(settings, imgName);
             return;
         }
+
         var imgBytes = await _service.LoadOriginalImageAsync(img);
 
         await settings.Bot.SendDocumentAsync(
@@ -228,6 +237,7 @@ class Program
             await ImgNotFoundAsync(settings, imgName);
             return;
         }
+
         await settings.Bot.SendPhotoAsync(
             chatId: settings.ChatId,
             photo: new MemoryStream(await _service.LoadThumbnailImageAsync(img))!,
@@ -302,7 +312,7 @@ class Program
     {
         var imgName = settings.Query!;
         settings.Image = _service.FindImageByName(imgName);
-        
+
         if (settings.Image is null)
         {
             await ImgNotFoundAsync(settings, imgName);
@@ -415,6 +425,7 @@ class Program
             await ImgNotFoundAsync(settings, settings.Query);
             return;
         }
+
         await SendImageAsync(settings);
     }
 
